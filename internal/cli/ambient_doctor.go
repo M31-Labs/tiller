@@ -182,14 +182,15 @@ func (d *ambientDoctor) checkAmbientBypass(cwd string) {
 
 // checkPermissionMode reads permissions.defaultMode from ~/.claude/settings.json
 // (user) and <cwd>/.claude/settings.json (project, overrides user). If the
-// effective mode is "bypassPermissions" or "auto", it emits a WARN explaining
-// that ambient denials rely on exit-2 hard-block. Otherwise emits PASS.
-// This check is informational only and never increments d.failures.
+// effective mode is "bypassPermissions" or "auto", it emits a WARN that ambient
+// denials may NOT be enforced: Claude Code can skip hook permission decisions in
+// these modes (observed: a denied command still ran under bypassPermissions).
+// Otherwise emits PASS. Informational only; never increments d.failures.
 func (d *ambientDoctor) checkPermissionMode(cwd string) {
 	mode := readEffectivePermissionMode(cwd)
 	switch mode {
 	case "bypassPermissions", "auto":
-		d.warn("ambient permission mode: %q bypasses the JSON permission flow; ambient denials rely on the exit-2 hard-block (this tiller enforces it). For permission-dialog UX use default/acceptEdits/dontAsk. Runtime --dangerously-skip-permissions overrides settings.", mode)
+		d.warn("ambient permission mode: %q — Claude Code may skip hook permission decisions in this mode, so tiller ambient denials are NOT reliably enforced. For enforcement use a non-bypass mode (default/acceptEdits, or dontAsk WITH a permissions.allow list) plus permissions.disableBypassPermissionsMode. Runtime --dangerously-skip-permissions overrides settings.", mode)
 	default:
 		if mode == "" {
 			mode = "default"

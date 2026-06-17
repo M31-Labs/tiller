@@ -108,8 +108,8 @@ func TestRunAmbientDoctorPermissionModeBypassWarn(t *testing.T) {
 	if !strings.Contains(out, "WARN") || !strings.Contains(out, "bypassPermissions") {
 		t.Fatalf("doctor output missing WARN for bypassPermissions:\n%s", out)
 	}
-	if !strings.Contains(out, "exit-2 hard-block") {
-		t.Fatalf("doctor output missing exit-2 hard-block mention:\n%s", out)
+	if !strings.Contains(out, "NOT reliably enforced") {
+		t.Fatalf("doctor output missing not-reliably-enforced warning:\n%s", out)
 	}
 	if strings.Contains(out, "FAIL ") {
 		t.Fatalf("doctor output contains failure (permission mode check must not fail):\n%s", out)
