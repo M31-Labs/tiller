@@ -121,12 +121,43 @@ func TestClassifyCommand(t *testing.T) {
 		{"ss --diag=/tmp/x", "other"},
 
 		// ── Canopy read-oriented commands ────────────────────────────────────
+		{"canopy --version", "readonly"},
+		{"canopy version", "readonly"},
+		{"canopy --help", "readonly"},
+		{"canopy help", "readonly"},
 		{"canopy search symbol Foo", "readonly"},
 		{"canopy graph call Foo", "readonly"},
 		{"canopy analyze report", "readonly"},
 		{"canopy index build .", "other"},
 		{"canopy init", "other"},
 		{"canopy mcp --root .", "other"},
+
+		// ── curl read-only HTTP(S) GETs ─────────────────────────────────────
+		{"curl https://example.com", "readonly"},
+		{"curl -sSL https://example.com", "readonly"},
+		{"curl --location --silent --show-error https://example.com", "readonly"},
+		{"curl -X GET https://example.com", "readonly"},
+		{"curl -XGET https://example.com", "readonly"},
+		{"curl --request GET https://example.com", "readonly"},
+		{"curl --request=GET https://example.com", "readonly"},
+		{"curl --max-time 5 --connect-timeout=2 https://example.com", "readonly"},
+		{"curl -X POST https://example.com", "other"},
+		{"curl --request DELETE https://example.com", "other"},
+		{"curl -d a=b https://example.com", "other"},
+		{"curl --json '{}' https://example.com", "other"},
+		{"curl -F a=b https://example.com", "other"},
+		{"curl -T file https://example.com", "other"},
+		{"curl -o out https://example.com", "other"},
+		{"curl -O https://example.com/file", "other"},
+		{"curl -D headers.txt https://example.com", "other"},
+		{"curl -K .curlrc https://example.com", "other"},
+		{"curl --netrc https://example.com", "other"},
+		{"curl -u user:pass https://example.com", "other"},
+		{"curl -b cookie https://example.com", "other"},
+		{"curl file:///etc/passwd", "other"},
+		{"curl ftp://example.com/file", "other"},
+		{"curl https://example.com > out", "other"},
+		{"curl https://example.com; touch /tmp/x", "other"},
 
 		// ── tiller variants ───────────────────────────────────────────────────
 		{"tiller runs", "readonly"},
@@ -139,6 +170,8 @@ func TestClassifyCommand(t *testing.T) {
 		// ── Env prefix rejection (any VAR=val prefix → other) ────────────────
 		{"BAR=2 ls -la", "other"},
 		{"FOO=1 BAR=2 gts hotspot .", "other"},
+		{"FOO=1 canopy --version", "other"},
+		{"PATH=/tmp/evil canopy search Foo", "other"},
 		{"PATH=/tmp go build ./...", "other"}, // env prefix → other
 		{"X=1 rm -rf /", "other"},
 		// These must still classify correctly without env prefix.
@@ -300,6 +333,50 @@ func TestIsAmbientControl(t *testing.T) {
 			got := IsAmbientControl(tc.cmd)
 			if got != tc.want {
 				t.Errorf("IsAmbientControl(%q) = %v, want %v", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsCheckpointCommit(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		want bool
+	}{
+		// ── Allowed: git add with explicit paths ─────────────────────────────
+		{"git add internal/hook/hook.go", true},
+		{"git add a.go b.go", true},
+		{"git add -- a.go", true},
+		// ── Allowed: buckley commit with safe flags ───────────────────────────
+		{"buckley commit --yes --min", true},
+		{"buckley commit --yes --minimal-output --exclusive --paths a.go --paths b.go --push=false", true},
+
+		// ── Denied: git add with dangerous/broad flags/args ──────────────────
+		{"git add -A", false},
+		{"git add .", false},
+		{"git add --all", false},
+		{"git add -u", false},
+		// ── Denied: wrong git subcommand ─────────────────────────────────────
+		{"git status", false},
+		// ── Denied: buckley with forbidden flags ─────────────────────────────
+		{"buckley commit --skip-entities", false},
+		{"buckley commit -graft", false},
+		{"buckley commit --graft", false},
+		{"buckley commit -m \"x\"", false},
+		{"buckley commit --no-verify", false},
+		// ── Denied: wrong buckley subcommand ─────────────────────────────────
+		{"buckley push", false},
+		// ── Denied: chaining/redirect/substitution ────────────────────────────
+		{"git add a.go && rm b", false},
+		{"buckley commit; echo hi", false},
+		{"buckley commit $(whoami)", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.cmd, func(t *testing.T) {
+			got := IsCheckpointCommit(tc.cmd)
+			if got != tc.want {
+				t.Errorf("IsCheckpointCommit(%q) = %v, want %v", tc.cmd, got, tc.want)
 			}
 		})
 	}

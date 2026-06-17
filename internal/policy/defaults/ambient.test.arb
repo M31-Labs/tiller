@@ -210,6 +210,136 @@ test "get_goal is allowed as ambient read/context" {
     expect rule DenyExecution not matched
 }
 
+test "namespaced GitHub connector fetch is allowed as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "mcp__codex_apps__github._fetch_pr"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowGitHubConnectorRead matched
+    expect rule DenyExecution not matched
+}
+
+test "namespaced GitHub connector exact fetch is allowed as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "mcp__codex_apps__github._fetch"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowGitHubConnectorRead matched
+    expect rule DenyExecution not matched
+}
+
+test "namespaced GitHub connector exact search is allowed as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "mcp__codex_apps__github._search"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowGitHubConnectorRead matched
+    expect rule DenyExecution not matched
+}
+
+test "bare read-like underscore leaf is denied as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "_fetch_pr"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowRead not matched
+    expect rule AllowGitHubConnectorRead not matched
+    expect rule DenyExecution not matched
+}
+
+test "non-GitHub read-like underscore leaf is denied as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "_fetch_secret"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowRead not matched
+    expect rule AllowGitHubConnectorRead not matched
+    expect rule DenyExecution not matched
+}
+
+test "namespaced GitHub connector mutation is not allowed as ambient read/context" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "mcp__codex_apps__github._create_issue"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowRead not matched
+    expect rule AllowGitHubConnectorRead not matched
+    expect rule DenyExecution matched
+}
+
+test "multi_tool parallel wrapper is denied by ambient root" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "multi_tool_use.parallel"
+        tool.command: ""
+        tool.command_class: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        run.id: ""
+    }
+    expect rule AllowRead not matched
+    expect rule AllowGitHubConnectorRead not matched
+    expect rule DenyExecution not matched
+}
+
 # ── AllowAgent ───────────────────────────────────────────────────────────────
 
 test "Agent (Task dispatch) is allowed in ambient mode" {
@@ -1252,6 +1382,25 @@ test "tiller uninstall chained with rm is denied (command_class=other)" {
     }
     expect rule AllowPermittedBash not matched
     expect rule DenyExecution matched
+}
+
+test "checkpoint-commit buckley commit is allowed (checkpoint-commit escape hatch)" {
+    given {
+        agent.role: "ambient-orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: ""
+        tool.name: "Bash"
+        tool.command: "buckley commit --yes --min"
+        tool.command_class: "checkpoint-commit"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        tool.write_class: ""
+        tool.agent_type: ""
+        tool.agent_model_tier: ""
+        run.id: ""
+    }
+    expect rule AllowPermittedBash matched
 }
 
 test "tiller install is denied (not uninstall)" {

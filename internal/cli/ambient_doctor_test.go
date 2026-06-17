@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,81 @@ func TestRunAmbientDoctorBypassMarkerWarnsWithoutFailing(t *testing.T) {
 	}
 	if !strings.Contains(out, "WARN ambient bypass: enabled") {
 		t.Fatalf("doctor output missing bypass warning:\n%s", out)
+	}
+	if strings.Contains(out, "FAIL ") {
+		t.Fatalf("doctor output contains failure:\n%s", out)
+	}
+}
+
+func TestRunAmbientDoctorPermissionModeBypassWarn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectDir := t.TempDir()
+	withWorkingDir(t, projectDir)
+	t.Setenv("TILLER_AMBIENT_DISABLED", "")
+
+	// Write a user-level settings.json with bypassPermissions.
+	settingsDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	settings := map[string]any{
+		"permissions": map[string]any{
+			"defaultMode": "bypassPermissions",
+		},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0o644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	out, err := captureStdout(func() error {
+		return runAmbient([]string{"doctor"})
+	})
+	if err != nil {
+		t.Fatalf("runAmbient doctor should not fail for bypassPermissions WARN: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "WARN") || !strings.Contains(out, "bypassPermissions") {
+		t.Fatalf("doctor output missing WARN for bypassPermissions:\n%s", out)
+	}
+	if !strings.Contains(out, "exit-2 hard-block") {
+		t.Fatalf("doctor output missing exit-2 hard-block mention:\n%s", out)
+	}
+	if strings.Contains(out, "FAIL ") {
+		t.Fatalf("doctor output contains failure (permission mode check must not fail):\n%s", out)
+	}
+}
+
+func TestRunAmbientDoctorPermissionModeDefaultPass(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectDir := t.TempDir()
+	withWorkingDir(t, projectDir)
+	t.Setenv("TILLER_AMBIENT_DISABLED", "")
+
+	// Write a user-level settings.json with default mode.
+	settingsDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	settings := map[string]any{
+		"permissions": map[string]any{
+			"defaultMode": "default",
+		},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0o644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	out, err := captureStdout(func() error {
+		return runAmbient([]string{"doctor"})
+	})
+	if err != nil {
+		t.Fatalf("runAmbient doctor should not fail for default mode: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "PASS") || !strings.Contains(out, "default") {
+		t.Fatalf("doctor output missing PASS for default mode:\n%s", out)
 	}
 	if strings.Contains(out, "FAIL ") {
 		t.Fatalf("doctor output contains failure:\n%s", out)

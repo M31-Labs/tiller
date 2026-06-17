@@ -468,6 +468,8 @@ func handleAmbientPreToolUse(event HookEvent, stdout io.Writer, workspaceDir str
 			req.CommandClass = "ambient-control"
 		} else if IsCodexExec(req.Command) {
 			req.CommandClass = "codex-exec"
+		} else if IsCheckpointCommit(req.Command) {
+			req.CommandClass = "checkpoint-commit"
 		} else {
 			req.CommandClass = ClassifyCommand(req.Command)
 		}

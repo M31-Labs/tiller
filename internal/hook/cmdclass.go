@@ -47,6 +47,11 @@ import (
 //
 //	gts: all subcommands (read-only by design).
 //
+//	canopy: --version, version, --help, help, search, graph, and analyze.
+//
+//	curl: HTTP(S) GET requests that write the response to stdout, with a
+//	conservative allowlist of non-mutating flags.
+//
 //	hypha: all subcommands EXCEPT "mcp serve" and "hub serve" → other.
 //
 //	tiller: runs, poll, version subcommands only. Self-uninstall and ambient
@@ -409,6 +414,9 @@ func classifySegment(seg string) string {
 	case "canopy":
 		return classifyCanopy(sub)
 
+	case "curl":
+		return classifyCurl(argv)
+
 	// ── hypha (all except mcp serve / hub serve) ─────────────────────────────
 	case "hypha":
 		return classifyHypha(sub, argv)
@@ -423,6 +431,135 @@ func classifySegment(seg string) string {
 	}
 
 	return "other"
+}
+
+func classifyCurl(argv []string) string {
+	if len(argv) < 2 {
+		return "other"
+	}
+
+	sawHTTPURL := false
+	requestMethod := "GET"
+	for i := 1; i < len(argv); i++ {
+		arg := argv[i]
+		if arg == "" {
+			return "other"
+		}
+
+		switch {
+		case strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://"):
+			sawHTTPURL = true
+			continue
+		case looksLikeURL(arg):
+			return "other"
+		case arg == "-X" || arg == "--request":
+			i++
+			if i >= len(argv) {
+				return "other"
+			}
+			method := strings.ToUpper(argv[i])
+			if method != "GET" {
+				return "other"
+			}
+			requestMethod = method
+		case strings.HasPrefix(arg, "-X") && len(arg) > 2:
+			method := strings.ToUpper(strings.TrimPrefix(arg, "-X"))
+			if method != "GET" {
+				return "other"
+			}
+			requestMethod = method
+		case strings.HasPrefix(arg, "--request="):
+			method := strings.ToUpper(strings.TrimPrefix(arg, "--request="))
+			if method != "GET" {
+				return "other"
+			}
+			requestMethod = method
+		case arg == "--max-time" || arg == "--connect-timeout" || arg == "-m":
+			i++
+			if i >= len(argv) || !isCurlNumericValue(argv[i]) {
+				return "other"
+			}
+		case strings.HasPrefix(arg, "--max-time="):
+			if !isCurlNumericValue(strings.TrimPrefix(arg, "--max-time=")) {
+				return "other"
+			}
+		case strings.HasPrefix(arg, "--connect-timeout="):
+			if !isCurlNumericValue(strings.TrimPrefix(arg, "--connect-timeout=")) {
+				return "other"
+			}
+		case arg == "--silent" || arg == "--show-error" || arg == "--location" ||
+			arg == "--fail" || arg == "--include" || arg == "--verbose" ||
+			arg == "--compressed":
+			continue
+		case strings.HasPrefix(arg, "--"):
+			return "other"
+		case strings.HasPrefix(arg, "-"):
+			if !classifyCurlShortFlags(arg) {
+				return "other"
+			}
+		default:
+			return "other"
+		}
+	}
+
+	if !sawHTTPURL || requestMethod != "GET" {
+		return "other"
+	}
+	return "readonly"
+}
+
+func classifyCurlShortFlags(arg string) bool {
+	if arg == "-" || !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+		return false
+	}
+	flags := strings.TrimPrefix(arg, "-")
+	for i := 0; i < len(flags); i++ {
+		switch flags[i] {
+		case 's', 'S', 'L', 'f', 'i', 'v':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeURL(arg string) bool {
+	schemeEnd := strings.Index(arg, "://")
+	if schemeEnd <= 0 {
+		return false
+	}
+	scheme := arg[:schemeEnd]
+	for _, r := range scheme {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '+', r == '-', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isCurlNumericValue(arg string) bool {
+	if arg == "" || strings.HasPrefix(arg, "-") {
+		return false
+	}
+	sawDigit := false
+	sawDot := false
+	for _, r := range arg {
+		switch {
+		case r >= '0' && r <= '9':
+			sawDigit = true
+		case r == '.' && !sawDot:
+			sawDot = true
+		default:
+			return false
+		}
+	}
+	return sawDigit
 }
 
 func classifySed(argv []string) string {
@@ -507,7 +644,7 @@ func classifySS(argv []string) string {
 
 func classifyCanopy(sub string) string {
 	switch sub {
-	case "search", "graph", "analyze", "help":
+	case "--version", "version", "--help", "help", "search", "graph", "analyze":
 		return "readonly"
 	default:
 		return "other"
@@ -924,6 +1061,123 @@ func trimShellToken(s string) string {
 		}
 		return s
 	}
+}
+
+// IsCheckpointCommit returns true for the narrow checkpoint/commit workflow
+// commands that a gated ambient root is permitted to run:
+//
+//   (a) git add <path>...: stages explicit paths (no wildcards, no -A/-u/--all/".").
+//   (b) buckley commit [safe-flags]: runs buckley commit with a conservative
+//       allowlist of flags; dangerous flags like --skip-entities, -graft,
+//       --graft, --no-verify, -m, --message, --model, --backend are rejected.
+//
+// Single-segment only (no chaining, redirects, or substitution).
+func IsCheckpointCommit(cmd string) bool {
+	segments, ok := splitSegmentsQuoteAware(cmd)
+	if !ok || len(segments) != 1 {
+		return false
+	}
+	fields, ok := shellFields(segments[0])
+	if !ok || len(fields) == 0 {
+		return false
+	}
+	if isVarAssignment(fields[0]) {
+		return false
+	}
+	argv := fields
+	argv0 := filepath.Base(argv[0])
+
+	switch argv0 {
+	case "git":
+		return isCheckpointGitAdd(argv)
+	case "buckley":
+		return isCheckpointBuckleyCommit(argv)
+	}
+	return false
+}
+
+// isCheckpointGitAdd validates "git add <path>..." with explicit paths only.
+// Rejects: any flag starting with "-" (except a single "--" separator),
+// literal "." and "*".
+func isCheckpointGitAdd(argv []string) bool {
+	// argv[0] == "git", need at least argv[1]=="add" and argv[2] (a path)
+	if len(argv) < 3 {
+		return false
+	}
+	if argv[1] != "add" {
+		return false
+	}
+	sawSep := false
+	sawPath := false
+	for i := 2; i < len(argv); i++ {
+		arg := argv[i]
+		if !sawSep && arg == "--" {
+			sawSep = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			// Flag after "--" separator or any flag at all → reject.
+			return false
+		}
+		// Reject literal "." and "*".
+		if arg == "." || arg == "*" {
+			return false
+		}
+		sawPath = true
+	}
+	return sawPath
+}
+
+// isCheckpointBuckleyCommit validates "buckley commit [allowed-flags]".
+// Rejects any arg not in the allowlist, and specifically rejects:
+// --skip-entities, -graft, --graft, --no-verify, -m, --message, --model, --backend.
+func isCheckpointBuckleyCommit(argv []string) bool {
+	// argv[0] == "buckley", need argv[1]=="commit"
+	if len(argv) < 2 {
+		return false
+	}
+	if argv[1] != "commit" {
+		return false
+	}
+
+	// Allowlist of standalone flags.
+	standaloneFlags := map[string]bool{
+		"--yes": true, "-y": true,
+		"--min": true, "-min": true, "--minimal-output": true,
+		"--exclusive": true,
+		"--dry-run":   true,
+		"--push":       true, "--push=true": true, "--push=false": true, "--no-push": true,
+		"--cost": true, "--no-cost": true,
+	}
+
+	for i := 2; i < len(argv); i++ {
+		arg := argv[i]
+		if standaloneFlags[arg] {
+			continue
+		}
+		// --paths <value> or --paths=<value> (value must be a non-flag path).
+		if arg == "--paths" {
+			i++
+			if i >= len(argv) {
+				return false
+			}
+			val := argv[i]
+			if strings.HasPrefix(val, "-") {
+				return false
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "--paths=") {
+			val := strings.TrimPrefix(arg, "--paths=")
+			if val == "" || strings.HasPrefix(val, "-") {
+				return false
+			}
+			continue
+		}
+		// Everything else is rejected.
+		return false
+	}
+	return true
 }
 
 // classifyHypha classifies a hypha invocation.

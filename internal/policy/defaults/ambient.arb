@@ -34,6 +34,23 @@ rule AllowRead priority 10 {
     then Allow { reason: "read/context gathering is permitted for the ambient orchestrator" }
 }
 
+rule AllowGitHubConnectorRead priority 10 {
+    when {
+        tool.name starts_with "mcp__codex_apps__github._fetch_" or
+        tool.name starts_with "mcp__codex_apps__github._get_" or
+        tool.name starts_with "mcp__codex_apps__github._list_" or
+        tool.name starts_with "mcp__codex_apps__github._search_" or
+        tool.name in [
+            "mcp__codex_apps__github._fetch",
+            "mcp__codex_apps__github._search",
+            "mcp__codex_apps__github._compare_commits",
+            "mcp__codex_apps__github._download_user_content",
+            "mcp__codex_apps__github._download_workflow_artifact"
+        ]
+    }
+    then Allow { reason: "read-only GitHub connector tool is permitted for the ambient orchestrator" }
+}
+
 rule AllowAgent priority 10 {
     when { tool.name in ["Agent", "Task"] }
     then Allow { reason: "reason-tier orchestrator dispatches via Agent (Task); subagents execute" }
@@ -132,8 +149,9 @@ rule DenyHyphaDaemons priority 14 {
 # AllowPermittedBash — allows the ambient orchestrator to run Bash commands
 # that carry an explicitly permitted command class:
 #
-#   "readonly"       — read-only commands (git log, ls, cat, gts, hypha recall,
-#                      …).  The Go-side ClassifyCommand classifier sets this class
+#   "readonly"       — read-only commands (git log, ls, cat, gts, safe canopy
+#                      reads, hypha recall, …).  The Go-side ClassifyCommand
+#                      classifier sets this class
 #                      only when every pipeline segment is in the read-only
 #                      allowlist and no dangerous redirects/substitutions appear.
 #                      "2>&1" is the one permitted redirect token.
@@ -154,6 +172,16 @@ rule DenyHyphaDaemons priority 14 {
 #                      execution, optional report output under .tiller/, and
 #                      no dangerous sandbox bypass flags.
 #
+#   "checkpoint-commit" — checkpoint/commit escape hatch: explicit-path
+#                      "git add <path>..." (no -A/-u/--all/".") and
+#                      "buckley commit" with a conservative flag allowlist
+#                      (--yes/-y, --min/-min/--minimal-output, --exclusive,
+#                      --dry-run, --push/--push=true/--push=false/--no-push,
+#                      --cost/--no-cost, --paths <value>).  Dangerous flags
+#                      (--skip-entities, -graft, --graft, --no-verify, -m,
+#                      --message, --model, --backend) are rejected by the
+#                      Go-side IsCheckpointCommit predicate.
+#
 # These classes are combined in one rule to avoid an arbiter v1.8.0 VM
 # quirk: having two separate inline-condition rules before a segment-based rule
 # causes the segment rule to not evaluate.  A single OR condition is the
@@ -161,7 +189,7 @@ rule DenyHyphaDaemons priority 14 {
 rule AllowPermittedBash priority 15 {
     when {
         (tool.name in ["Bash", "exec_command"]) and
-        (tool.command_class == "readonly" or tool.command_class == "self-uninstall" or tool.command_class == "ambient-control" or tool.command_class == "codex-exec")
+        (tool.command_class == "readonly" or tool.command_class == "self-uninstall" or tool.command_class == "ambient-control" or tool.command_class == "codex-exec" or tool.command_class == "checkpoint-commit")
     }
     then Allow { reason: "Bash command permitted for the ambient orchestrator (class: {tool.command_class})" }
 }
@@ -179,6 +207,24 @@ rule AllowMarkdownAuthoring priority 15 {
 }
 
 rule DenyExecution priority 20 {
-    when segment denied_tools { true }
+    when {
+        tool.name in ["Edit", "Write", "NotebookEdit", "Bash", "apply_patch", "exec_command", "write_stdin"] or
+        (
+            tool.name starts_with "mcp__codex_apps__github." and
+            not (
+                tool.name starts_with "mcp__codex_apps__github._fetch_" or
+                tool.name starts_with "mcp__codex_apps__github._get_" or
+                tool.name starts_with "mcp__codex_apps__github._list_" or
+                tool.name starts_with "mcp__codex_apps__github._search_" or
+                tool.name in [
+                    "mcp__codex_apps__github._fetch",
+                    "mcp__codex_apps__github._search",
+                    "mcp__codex_apps__github._compare_commits",
+                    "mcp__codex_apps__github._download_user_content",
+                    "mcp__codex_apps__github._download_workflow_artifact"
+                ]
+            )
+        )
+    }
     then Deny { reason: "tiller: ambient orchestrator runs in read/dispatch mode — delegate with the Task tool: status compaction → tiller-summary, code changes → tiller-worker, debugging → tiller-debugger, investigation → tiller-investigator, review → tiller-reviewer; reserve tiller-architect/tiller-deep-report for deep design and research. {tool.name} is not permitted for the root orchestrator agent." }
 }

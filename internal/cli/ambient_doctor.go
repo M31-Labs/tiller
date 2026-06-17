@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ func runAmbientDoctor() error {
 	d.checkRuntime()
 	d.checkSourceDrift(cwd)
 	d.checkAmbientBypass(cwd)
+	d.checkPermissionMode(cwd)
 	d.checkClassifierSmoke()
 	d.checkFallbackLedgerSmoke()
 	d.checkHookSmoke()
@@ -150,8 +152,12 @@ func newerAmbientSources(cwd string, exeModUnixNano int64) []string {
 		"internal/cli/ambient.go",
 		"internal/cli/ambient_step.go",
 		"internal/hook/cmdclass.go",
+		"internal/hook/hook.go",
 		"internal/policy/defaults/ambient.arb",
+		"internal/policy/defaults/toolgate.arb",
+		"internal/spawn/settings.go",
 		"policy/ambient.arb",
+		"policy/toolgate.arb",
 		"cmd/tiller/main.go",
 	} {
 		path := filepath.Join(cwd, rel)
@@ -174,6 +180,68 @@ func (d *ambientDoctor) checkAmbientBypass(cwd string) {
 	d.pass("ambient bypass: not active")
 }
 
+// checkPermissionMode reads permissions.defaultMode from ~/.claude/settings.json
+// (user) and <cwd>/.claude/settings.json (project, overrides user). If the
+// effective mode is "bypassPermissions" or "auto", it emits a WARN explaining
+// that ambient denials rely on exit-2 hard-block. Otherwise emits PASS.
+// This check is informational only and never increments d.failures.
+func (d *ambientDoctor) checkPermissionMode(cwd string) {
+	mode := readEffectivePermissionMode(cwd)
+	switch mode {
+	case "bypassPermissions", "auto":
+		d.warn("ambient permission mode: %q bypasses the JSON permission flow; ambient denials rely on the exit-2 hard-block (this tiller enforces it). For permission-dialog UX use default/acceptEdits/dontAsk. Runtime --dangerously-skip-permissions overrides settings.", mode)
+	default:
+		if mode == "" {
+			mode = "default"
+		}
+		d.pass("ambient permission mode: %q honors hook deny decisions.", mode)
+	}
+}
+
+// readEffectivePermissionMode reads permissions.defaultMode from the user-level
+// and optionally project-level Claude Code settings.json files.
+// Project settings override user settings; a missing file is silently ignored.
+func readEffectivePermissionMode(cwd string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+
+	userMode := ""
+	if home != "" {
+		userMode = readPermissionModeFromFile(filepath.Join(home, ".claude", "settings.json"))
+	}
+
+	projectMode := ""
+	if cwd != "" {
+		projectMode = readPermissionModeFromFile(filepath.Join(cwd, ".claude", "settings.json"))
+	}
+
+	// Project overrides user; return the effective non-empty mode.
+	if projectMode != "" {
+		return projectMode
+	}
+	return userMode
+}
+
+// readPermissionModeFromFile parses a Claude Code settings.json and returns
+// permissions.defaultMode, or "" if the file is missing or the field is absent.
+func readPermissionModeFromFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		Permissions struct {
+			DefaultMode string `json:"defaultMode"`
+		} `json:"permissions"`
+	}
+	if jsonErr := json.Unmarshal(data, &doc); jsonErr != nil {
+		return ""
+	}
+	return doc.Permissions.DefaultMode
+}
+
 func (d *ambientDoctor) checkClassifierSmoke() {
 	checks := []struct {
 		name string
@@ -188,6 +256,9 @@ func (d *ambientDoctor) checkClassifierSmoke() {
 		{"git status readonly", hook.ClassifyCommand("git status --short") == "readonly"},
 		{"lsof port diagnostics readonly", hook.ClassifyCommand("lsof -iTCP -sTCP:LISTEN -P -n") == "readonly"},
 		{"ss port diagnostics readonly", hook.ClassifyCommand("ss -ltnp") == "readonly"},
+		{"curl GET readonly", hook.ClassifyCommand("curl -sSL https://example.com") == "readonly"},
+		{"curl POST denied-classified", hook.ClassifyCommand("curl -X POST https://example.com") == "other"},
+		{"curl output denied-classified", hook.ClassifyCommand("curl -o out https://example.com") == "other"},
 		{"go build denied-classified", hook.ClassifyCommand("go build ./...") == "other"},
 	}
 	for _, check := range checks {
@@ -227,6 +298,7 @@ func (d *ambientDoctor) checkHookSmoke() {
 		"tiller ambient next",
 		"tiller ambient step --dry-run",
 		"tiller ambient doctor",
+		"curl -sSL https://example.com",
 	} {
 		out, err := codexDoctorRunHook(smokeWorkspace, codexDoctorPreToolEvent(transcript, "Bash", map[string]any{"command": command}))
 		if err != nil {
@@ -271,4 +343,25 @@ func (d *ambientDoctor) checkHookSmoke() {
 		return
 	}
 	d.pass("hook smoke: PreToolUse Bash %q Codex deny guidance", "go build ./...")
+
+	for _, command := range []string{
+		"curl -X POST https://example.com",
+		"curl -o out https://example.com",
+	} {
+		out, err = codexDoctorRunHook(smokeWorkspace, codexDoctorPreToolEvent(transcript, "Bash", map[string]any{"command": command}))
+		if err != nil {
+			d.fail("hook smoke Bash %q: %v", command, err)
+			continue
+		}
+		reason = codexDoctorDecisionReason(out)
+		if decision := codexDoctorDecision(out); decision != "deny" {
+			d.fail("hook smoke Bash %q: expected deny, got %q", command, decision)
+			continue
+		}
+		if !containsAll(reason, []string{"spawn_agent", "tiller-worker"}) {
+			d.fail("hook smoke Bash %q: deny reason missing Codex delegation guidance: %q", command, reason)
+			continue
+		}
+		d.pass("hook smoke: PreToolUse Bash %q Codex deny guidance", command)
+	}
 }

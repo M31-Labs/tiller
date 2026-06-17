@@ -3015,3 +3015,79 @@ func TestBlockingDenyError_AmbientDisabledFailsOpen(t *testing.T) {
 		t.Errorf("ambient disabled must produce no stdout, got: %s", got)
 	}
 }
+
+// ─── checkpoint-commit escape hatch ──────────────────────────────────────────
+
+// TestAmbientCheckpointCommitAllowed verifies that a governed ambient root
+// running "buckley commit --yes --min" is allowed (nil error, stdout contains
+// permissionDecision:"allow").
+func TestAmbientCheckpointCommitAllowed(t *testing.T) {
+	p := fableTranscript(t)
+
+	event := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"tool_input":      map[string]any{"command": "buckley commit --yes --min"},
+		"transcript_path": p,
+		"agent_id":        "",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+
+	old := os.Getenv("TILLER_ROLE")
+	os.Unsetenv("TILLER_ROLE")
+	t.Cleanup(func() {
+		if old != "" {
+			os.Setenv("TILLER_ROLE", old)
+		}
+	})
+
+	var out bytes.Buffer
+	if err := Run(strings.NewReader(string(data)), &out, ""); err != nil {
+		t.Fatalf("unexpected error for buckley commit --yes --min: %v", err)
+	}
+	outBytes := bytes.TrimSpace(out.Bytes())
+	if len(outBytes) == 0 {
+		t.Fatal("expected JSON allow output, got empty stdout (passthrough)")
+	}
+	if !strings.Contains(string(outBytes), `"permissionDecision":"allow"`) {
+		t.Fatalf("expected permissionDecision allow, got: %s", outBytes)
+	}
+}
+
+// TestAmbientGitAddBroadDenied verifies that a governed ambient root running
+// "git add -A" returns a *BlockingDenyError (hard-block).
+func TestAmbientGitAddBroadDenied(t *testing.T) {
+	p := fableTranscript(t)
+
+	event := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"tool_input":      map[string]any{"command": "git add -A"},
+		"transcript_path": p,
+		"agent_id":        "",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+
+	old := os.Getenv("TILLER_ROLE")
+	os.Unsetenv("TILLER_ROLE")
+	t.Cleanup(func() {
+		if old != "" {
+			os.Setenv("TILLER_ROLE", old)
+		}
+	})
+
+	var out bytes.Buffer
+	err = Run(strings.NewReader(string(data)), &out, "")
+	if err == nil {
+		t.Fatal("expected *BlockingDenyError for git add -A, got nil error")
+	}
+	if _, ok := err.(*BlockingDenyError); !ok {
+		t.Fatalf("expected *BlockingDenyError, got %T: %v", err, err)
+	}
+}
