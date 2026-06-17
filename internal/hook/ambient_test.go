@@ -49,6 +49,10 @@ func transcriptPath(t *testing.T, name string) string {
 
 // runAmbientHook simulates running the ambient code path (TILLER_ROLE unset)
 // with a hook event that includes transcript_path.
+//
+// After the BlockingDenyError fix, claude-code ambient DENY no longer writes JSON
+// to stdout; instead Run() returns *BlockingDenyError. This helper treats that as
+// decision="deny" with nil output bytes (empty stdout), preserving test semantics.
 func runAmbientHookWithTranscript(t *testing.T, transcriptFile, toolName string) (decision string, output []byte) {
 	t.Helper()
 
@@ -76,6 +80,11 @@ func runAmbientHookWithTranscript(t *testing.T, transcriptFile, toolName string)
 	var out bytes.Buffer
 	err = Run(strings.NewReader(string(data)), &out, "")
 	if err != nil {
+		// *BlockingDenyError is the new contract for claude-code ambient deny.
+		// Treat it as decision="deny" with no stdout output.
+		if _, ok := err.(*BlockingDenyError); ok {
+			return "deny", nil
+		}
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -383,26 +392,39 @@ rule DenyProjectRead priority 1 {
 	})
 
 	var out bytes.Buffer
-	if err := Run(strings.NewReader(string(data)), &out, workspace); err != nil {
-		t.Fatalf("Run error: %v", err)
+	err = Run(strings.NewReader(string(data)), &out, workspace)
+	// After the BlockingDenyError fix, claude-code deny returns *BlockingDenyError.
+	// The reason is in bde.Reason; stdout is empty.
+	if err != nil {
+		bde, ok := err.(*BlockingDenyError)
+		if !ok {
+			t.Fatalf("Run error: %v", err)
+		}
+		if !strings.Contains(bde.Reason, "DenyProjectRead") || !strings.Contains(bde.Reason, distinctiveReason) {
+			t.Fatalf("override reason not used; got %q", bde.Reason)
+		}
+		// Verify stdout is empty (no JSON on the deny path).
+		if got := bytes.TrimSpace(out.Bytes()); len(got) != 0 {
+			t.Fatalf("deny path must not write to stdout, got: %s", got)
+		}
+		return
 	}
+	// If nil error: unexpected — the project override should deny.
 	outBytes := bytes.TrimSpace(out.Bytes())
 	if len(outBytes) == 0 {
-		t.Fatal("expected ambient policy decision, got passthrough")
+		t.Fatal("expected ambient policy decision (deny), got passthrough")
 	}
-	if decision := parseAmbientDecision(t, outBytes); decision != "deny" {
-		t.Fatalf("decision = %q, want deny; raw output: %s", decision, outBytes)
-	}
-	reason := parseDecisionReason(t, outBytes)
-	if !strings.Contains(reason, "DenyProjectRead") || !strings.Contains(reason, distinctiveReason) {
-		t.Fatalf("override reason not used; got %q", reason)
-	}
+	t.Fatalf("expected BlockingDenyError for project-override deny, but got nil error and output: %s", outBytes)
 }
 
 // ─── Ambient deny reason: no vendor tokens, correct persona list ──────────────
 
 // runAmbientHookWithTranscriptFull returns the full decoded output including
 // the PermissionDecisionReason field.
+//
+// After the BlockingDenyError fix, claude-code ambient DENY no longer writes JSON
+// to stdout; instead Run() returns *BlockingDenyError whose .Reason carries the
+// decision reason. This helper surfaces that as decision="deny", reason=bde.Reason.
 func runAmbientHookWithTranscriptFull(t *testing.T, transcriptFile, toolName string) (decision, reason string) {
 	t.Helper()
 
@@ -428,6 +450,11 @@ func runAmbientHookWithTranscriptFull(t *testing.T, transcriptFile, toolName str
 
 	var out bytes.Buffer
 	if err := Run(strings.NewReader(string(data)), &out, ""); err != nil {
+		// *BlockingDenyError is the new contract for claude-code ambient deny.
+		// Reason carries the full decision reason string.
+		if bde, ok := err.(*BlockingDenyError); ok {
+			return "deny", bde.Reason
+		}
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -712,6 +739,10 @@ func parseDecisionReason(t *testing.T, out []byte) string {
 
 // runAmbientHookFull runs the ambient hook path with full tool_input control.
 // toolInput is passed verbatim as the tool_input JSON object.
+//
+// After the BlockingDenyError fix, claude-code ambient DENY no longer writes JSON
+// to stdout; instead Run() returns *BlockingDenyError. This helper treats that as
+// decision="deny", preserving existing test semantics.
 func runAmbientHookFull(t *testing.T, transcriptFile, toolName string, toolInput map[string]any) (decision string) {
 	t.Helper()
 
@@ -737,6 +768,10 @@ func runAmbientHookFull(t *testing.T, transcriptFile, toolName string, toolInput
 
 	var out bytes.Buffer
 	if err := Run(strings.NewReader(string(data)), &out, ""); err != nil {
+		// *BlockingDenyError is the new contract for claude-code ambient deny.
+		if _, ok := err.(*BlockingDenyError); ok {
+			return "deny"
+		}
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -794,10 +829,21 @@ func TestClaudeAmbientGovernedPreToolUseAppendsUsageLedger(t *testing.T) {
 	runHook := func() {
 		t.Helper()
 		var out bytes.Buffer
-		if err := Run(strings.NewReader(string(data)), &out, workspace); err != nil {
-			t.Fatalf("Run error: %v", err)
+		err := Run(strings.NewReader(string(data)), &out, workspace)
+		// After the BlockingDenyError fix, claude-code deny returns *BlockingDenyError.
+		if err != nil {
+			if _, ok := err.(*BlockingDenyError); !ok {
+				t.Fatalf("Run error: %v", err)
+			}
+			// *BlockingDenyError is the expected deny signal — stdout must be empty.
+			if got := bytes.TrimSpace(out.Bytes()); len(got) != 0 {
+				t.Fatalf("deny path must not write to stdout, got: %s", got)
+			}
+			return
 		}
-		if decision := parseAmbientDecision(t, bytes.TrimSpace(out.Bytes())); decision != "deny" {
+		// nil error: check JSON (allow/ask paths are still JSON).
+		outBytes := bytes.TrimSpace(out.Bytes())
+		if decision := parseAmbientDecision(t, outBytes); decision != "deny" {
 			t.Fatalf("expected deny, got %q", decision)
 		}
 	}
@@ -872,11 +918,18 @@ func TestClaudeAmbientGovernedPreToolUseWritesAuditLine(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := Run(strings.NewReader(string(data)), &out, workspace); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	if decision := parseAmbientDecision(t, bytes.TrimSpace(out.Bytes())); decision != "deny" {
-		t.Fatalf("expected deny, got %q", decision)
+	err = Run(strings.NewReader(string(data)), &out, workspace)
+	// After the BlockingDenyError fix, claude-code deny returns *BlockingDenyError.
+	if err != nil {
+		if _, ok := err.(*BlockingDenyError); !ok {
+			t.Fatalf("Run error: %v", err)
+		}
+		// *BlockingDenyError is the expected deny signal.
+	} else {
+		// nil error: fall back to checking JSON output.
+		if decision := parseAmbientDecision(t, bytes.TrimSpace(out.Bytes())); decision != "deny" {
+			t.Fatalf("expected deny, got %q", decision)
+		}
 	}
 
 	auditPath := filepath.Join(runDir, "audit", "toolgate.jsonl")
@@ -939,11 +992,84 @@ func TestCodexAmbientNamespacedDiagnosticAllowedSilent(t *testing.T) {
 	}
 }
 
+func TestCodexAmbientNamespacedGitHubConnectorReadAllowedSilent(t *testing.T) {
+	p := codexTranscript(t, "xhigh")
+	out := runCodexAmbientHook(t, p, "mcp__codex_apps__github._fetch_pr", map[string]any{
+		"repo_full_name": "openai/openai",
+		"pr_number":      123,
+	})
+	if len(out) != 0 {
+		t.Fatalf("Codex allow for GitHub connector read should produce no stdout, got %s", out)
+	}
+}
+
+func TestCodexAmbientNamespacedGitHubConnectorExactReadsAllowedSilent(t *testing.T) {
+	p := codexTranscript(t, "xhigh")
+	for _, toolName := range []string{"mcp__codex_apps__github._fetch", "mcp__codex_apps__github._search"} {
+		out := runCodexAmbientHook(t, p, toolName, map[string]any{
+			"url":   "https://github.com/openai/openai/blob/main/README.md",
+			"query": "repo",
+		})
+		if len(out) != 0 {
+			t.Fatalf("Codex allow for exact GitHub connector read %s should produce no stdout, got %s", toolName, out)
+		}
+	}
+}
+
+func TestCodexAmbientGitHubConnectorLeafReadDenied(t *testing.T) {
+	p := codexTranscript(t, "xhigh")
+	out := runCodexAmbientHook(t, p, "_get_pr_info", map[string]any{
+		"repository_full_name": "openai/openai",
+		"pr_number":            123,
+	})
+	if len(out) == 0 {
+		t.Fatal("expected Codex deny output for bare GitHub connector leaf read")
+	}
+	if decision := parseAmbientDecision(t, out); decision != "deny" {
+		t.Fatalf("expected deny, got %q", decision)
+	}
+}
+
+func TestCodexAmbientNamespacedGitHubConnectorWriteDenied(t *testing.T) {
+	p := codexTranscript(t, "xhigh")
+	out := runCodexAmbientHook(t, p, "mcp__codex_apps__github._create_issue", map[string]any{
+		"repository_full_name": "openai/openai",
+		"title":                "test",
+	})
+	if len(out) == 0 {
+		t.Fatal("expected Codex deny output for GitHub connector mutation")
+	}
+	if decision := parseAmbientDecision(t, out); decision != "deny" {
+		t.Fatalf("expected deny, got %q", decision)
+	}
+	reason := parseDecisionReason(t, out)
+	for _, want := range []string{"DenyExecution", "spawn_agent", "agent_type=\"tiller-worker\"", "wait_agent/close_agent"} {
+		if !strings.Contains(reason, want) {
+			t.Fatalf("Codex GitHub mutation deny reason missing %q:\n%s", want, reason)
+		}
+	}
+}
+
 func TestCodexAmbientWebRunWrapperDenied(t *testing.T) {
 	p := codexTranscript(t, "xhigh")
 	out := runCodexAmbientHook(t, p, "web.run", map[string]any{})
 	if len(out) == 0 {
 		t.Fatal("expected Codex deny output for generic web.run wrapper")
+	}
+	if decision := parseAmbientDecision(t, out); decision != "deny" {
+		t.Fatalf("expected deny, got %q", decision)
+	}
+}
+
+func TestCodexAmbientMultiToolParallelDenied(t *testing.T) {
+	p := codexTranscript(t, "xhigh")
+	out := runCodexAmbientHook(t, p, "multi_tool_use.parallel", map[string]any{
+		"tool_uses": []any{
+			map[string]any{"recipient_name": "functions.exec_command", "parameters": map[string]any{"cmd": "git status --short"}},
+		},
+	})
+	if len(out) == 0 {
+		t.Fatal("expected Codex deny output for multi_tool_use.parallel wrapper")
 	}
 	if decision := parseAmbientDecision(t, out); decision != "deny" {
 		t.Fatalf("expected deny, got %q", decision)
@@ -2318,6 +2444,72 @@ func TestAllowReadOnlyBash_GitLog(t *testing.T) {
 	}
 }
 
+// TestAllowReadOnlyBash_CanopyVersion: canopy --version is allowed as a read-only tool probe.
+func TestAllowReadOnlyBash_CanopyVersion(t *testing.T) {
+	p := fableTranscript(t)
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": "canopy --version"})
+	if decision != "allow" {
+		t.Errorf("expected allow for 'canopy --version', got %q", decision)
+	}
+}
+
+// TestAllowReadOnlyBash_CanopySearch: read-oriented canopy families are allowed.
+func TestAllowReadOnlyBash_CanopySearch(t *testing.T) {
+	p := fableTranscript(t)
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": "canopy search symbol Foo"})
+	if decision != "allow" {
+		t.Errorf("expected allow for 'canopy search symbol Foo', got %q", decision)
+	}
+}
+
+// TestAllowReadOnlyBash_CurlGet: stdout-only curl GETs are allowed.
+func TestAllowReadOnlyBash_CurlGet(t *testing.T) {
+	p := fableTranscript(t)
+	cmd := "curl -sSL https://example.com"
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": cmd})
+	if decision != "allow" {
+		t.Errorf("expected allow for %q, got %q", cmd, decision)
+	}
+}
+
+// TestAllowReadOnlyBash_DenyCurlPost: mutating curl methods stay denied.
+func TestAllowReadOnlyBash_DenyCurlPost(t *testing.T) {
+	p := fableTranscript(t)
+	cmd := "curl -X POST https://example.com"
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": cmd})
+	if decision != "deny" {
+		t.Errorf("expected deny for %q, got %q", cmd, decision)
+	}
+}
+
+// TestAllowReadOnlyBash_DenyCurlOutput: curl file output stays denied.
+func TestAllowReadOnlyBash_DenyCurlOutput(t *testing.T) {
+	p := fableTranscript(t)
+	cmd := "curl -o out https://example.com"
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": cmd})
+	if decision != "deny" {
+		t.Errorf("expected deny for %q, got %q", cmd, decision)
+	}
+}
+
+// TestAllowReadOnlyBash_DenyCanopyIndex: mutating canopy commands stay denied.
+func TestAllowReadOnlyBash_DenyCanopyIndex(t *testing.T) {
+	p := fableTranscript(t)
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": "canopy index build ."})
+	if decision != "deny" {
+		t.Errorf("expected deny for 'canopy index build .', got %q", decision)
+	}
+}
+
+// TestAllowReadOnlyBash_DenyEnvCanopy: env-prefixed canopy commands stay denied.
+func TestAllowReadOnlyBash_DenyEnvCanopy(t *testing.T) {
+	p := fableTranscript(t)
+	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": "FOO=1 canopy --version"})
+	if decision != "deny" {
+		t.Errorf("expected deny for 'FOO=1 canopy --version', got %q", decision)
+	}
+}
+
 // TestAllowReadOnlyBash_GtsPipe: env-prefixed commands are denied (env assignments
 // can override PATH/LD_PRELOAD and are therefore treated as unsafe).
 func TestAllowReadOnlyBash_GtsPipe(t *testing.T) {
@@ -2650,5 +2842,176 @@ func TestSelfUninstall_DenyInstall(t *testing.T) {
 	decision := runAmbientHookFull(t, p, "Bash", map[string]any{"command": "tiller install"})
 	if decision != "deny" {
 		t.Errorf("expected deny for 'tiller install' (not the escape hatch), got %q", decision)
+	}
+}
+
+// ─── BlockingDenyError: ambient claude-code deny exits 2, not JSON+exit-0 ──────
+//
+// These tests verify the new contract introduced to fix bypassPermissions bypass:
+// a claude-code ambient PreToolUse DENY must return *BlockingDenyError (mapped
+// to exit 2 by cli.Main), NOT write JSON permissionDecision:"deny" to stdout.
+// Exit 0 + JSON deny is the permission-flow path, which bypassPermissions skips.
+// Exit 2 is Claude Code's protocol-level blocking error, honored in ALL modes.
+
+// runClaudeCodeAmbientHookRaw runs the ambient hook with the claude-code backend
+// and returns the error and raw stdout bytes without asserting on error.
+func runClaudeCodeAmbientHookRaw(t *testing.T, transcriptFile, toolName string, toolInput map[string]any) (err error, out []byte) {
+	t.Helper()
+	event := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       toolName,
+		"tool_input":      toolInput,
+		"transcript_path": transcriptFile,
+		"agent_id":        "",
+	}
+	data, err2 := json.Marshal(event)
+	if err2 != nil {
+		t.Fatalf("marshal event: %v", err2)
+	}
+
+	old := os.Getenv("TILLER_ROLE")
+	os.Unsetenv("TILLER_ROLE")
+	t.Cleanup(func() {
+		if old != "" {
+			os.Setenv("TILLER_ROLE", old)
+		}
+	})
+
+	var buf bytes.Buffer
+	err = RunWithBackend(strings.NewReader(string(data)), &buf, "", "claude-code")
+	return err, bytes.TrimSpace(buf.Bytes())
+}
+
+// opusTranscript writes a minimal claude-opus-4-8 transcript (governed, reason-tier).
+func opusTranscript(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "t.jsonl")
+	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-4-8","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
+	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	return p
+}
+
+// TestBlockingDenyError_MutatingBashReturnsBlockingDenyError: a governed root
+// ambient session with a mutating Bash command must return *BlockingDenyError
+// (not nil), the reason must contain "DenyExecution", and stdout must be empty.
+func TestBlockingDenyError_MutatingBashReturnsBlockingDenyError(t *testing.T) {
+	p := opusTranscript(t)
+	err, out := runClaudeCodeAmbientHookRaw(t, p, "Bash", map[string]any{"command": "date"})
+
+	if err == nil {
+		t.Fatal("expected non-nil error for governed ambient deny (Bash date), got nil")
+	}
+	bde, ok := err.(*BlockingDenyError)
+	if !ok {
+		t.Fatalf("expected *BlockingDenyError, got %T: %v", err, err)
+	}
+	if !strings.Contains(bde.Reason, "DenyExecution") {
+		t.Errorf("BlockingDenyError.Reason must contain \"DenyExecution\", got: %q", bde.Reason)
+	}
+	if len(out) != 0 {
+		t.Errorf("stdout must be empty for claude-code deny path, got: %s", out)
+	}
+}
+
+// TestBlockingDenyError_ReadToolAllowsAndWritesJSON: a governed root ambient
+// session with a permitted Read tool must return nil error AND write allow JSON
+// to stdout (allow path unchanged).
+func TestBlockingDenyError_ReadToolAllowsAndWritesJSON(t *testing.T) {
+	p := opusTranscript(t)
+	err, out := runClaudeCodeAmbientHookRaw(t, p, "Read", map[string]any{"file_path": "/workspace/foo.go"})
+
+	if err != nil {
+		t.Fatalf("expected nil error for allowed Read tool, got: %v", err)
+	}
+	if !strings.Contains(string(out), `"permissionDecision":"allow"`) {
+		t.Errorf("allow path must write JSON with permissionDecision:allow to stdout, got: %s", out)
+	}
+}
+
+// TestBlockingDenyError_AgentImplicitInheritanceReturnsBlockingDenyError:
+// a governed root ambient session dispatching a generic Agent (no tiller type,
+// no model) must return *BlockingDenyError with reason containing
+// "DenyImplicitReasonInheritance", and stdout must be empty.
+func TestBlockingDenyError_AgentImplicitInheritanceReturnsBlockingDenyError(t *testing.T) {
+	p := opusTranscript(t)
+	err, out := runClaudeCodeAmbientHookRaw(t, p, "Agent", map[string]any{
+		"subagent_type": "Explore",
+	})
+
+	if err == nil {
+		t.Fatal("expected non-nil error for governed ambient deny (Agent Explore), got nil")
+	}
+	bde, ok := err.(*BlockingDenyError)
+	if !ok {
+		t.Fatalf("expected *BlockingDenyError, got %T: %v", err, err)
+	}
+	if !strings.Contains(bde.Reason, "DenyImplicitReasonInheritance") {
+		t.Errorf("BlockingDenyError.Reason must contain \"DenyImplicitReasonInheritance\", got: %q", bde.Reason)
+	}
+	if len(out) != 0 {
+		t.Errorf("stdout must be empty for claude-code deny path, got: %s", out)
+	}
+}
+
+// TestBlockingDenyError_NonGovernedModelFailsOpen: a non-governed model
+// (claude-sonnet-4-6) must return nil error and write nothing to stdout
+// (fail-open path unchanged).
+func TestBlockingDenyError_NonGovernedModelFailsOpen(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "t.jsonl")
+	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-sonnet-4-6","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
+	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	err, out := runClaudeCodeAmbientHookRaw(t, p, "Bash", map[string]any{"command": "go test ./..."})
+
+	if err != nil {
+		t.Fatalf("non-governed model must fail open (nil error), got: %v", err)
+	}
+	if len(out) != 0 {
+		t.Errorf("non-governed model must produce no stdout, got: %s", out)
+	}
+}
+
+// TestBlockingDenyError_AmbientDisabledFailsOpen: when .tiller/ambient.disabled
+// marker is present, the hook must return nil and write nothing (fail-open).
+func TestBlockingDenyError_AmbientDisabledFailsOpen(t *testing.T) {
+	workspace := t.TempDir()
+	if _, _, err := ambientgate.Disable(workspace); err != nil {
+		t.Fatalf("disable ambient: %v", err)
+	}
+
+	p := opusTranscript(t)
+	event := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"tool_input":      map[string]any{"command": "go test ./..."},
+		"transcript_path": p,
+		"agent_id":        "",
+	}
+	data, err2 := json.Marshal(event)
+	if err2 != nil {
+		t.Fatalf("marshal event: %v", err2)
+	}
+
+	old := os.Getenv("TILLER_ROLE")
+	os.Unsetenv("TILLER_ROLE")
+	t.Cleanup(func() {
+		if old != "" {
+			os.Setenv("TILLER_ROLE", old)
+		}
+	})
+
+	var buf bytes.Buffer
+	err := RunWithBackend(strings.NewReader(string(data)), &buf, workspace, "claude-code")
+	if err != nil {
+		t.Fatalf("ambient disabled must fail open (nil error), got: %v", err)
+	}
+	if got := bytes.TrimSpace(buf.Bytes()); len(got) != 0 {
+		t.Errorf("ambient disabled must produce no stdout, got: %s", got)
 	}
 }

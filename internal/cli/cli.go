@@ -3,6 +3,8 @@
 //
 //	0 — ok (including wait-timeout with status running)
 //	2 — internal error (hook fail-closed, unrecognised subcommand, flag parse error)
+//	    also used for ambient hook denials (Claude Code blocking contract: exit 2
+//	    stops the tool call in all permission modes including bypassPermissions)
 //	3 — policy denial (stderr = "RULE: reason")
 package cli
 
@@ -13,6 +15,7 @@ import (
 	"m31labs.dev/tiller/internal/adapter"
 	"m31labs.dev/tiller/internal/adapter/claudeheadless"
 	"m31labs.dev/tiller/internal/adapter/command"
+	"m31labs.dev/tiller/internal/hook"
 	"m31labs.dev/tiller/internal/tier"
 )
 
@@ -110,6 +113,10 @@ func Main(args []string) {
 	for _, sc := range subcommands {
 		if sc.name == sub {
 			if err := sc.handler(args[2:]); err != nil {
+				if bde, ok := err.(*hook.BlockingDenyError); ok {
+					fmt.Fprintln(os.Stderr, bde.Reason)
+					os.Exit(2)
+				}
 				if de, ok := err.(*DenialError); ok {
 					fmt.Fprintf(os.Stderr, "RULE: %s\n", de.Error())
 					os.Exit(3)
@@ -156,7 +163,7 @@ Subcommands:
   _supervise <run> <id>  internal: detached child supervisor
   version                print version
 
-Exit codes: 0 ok; 2 internal error; 3 policy denial
+Exit codes: 0 ok; 2 internal error or ambient deny (Claude Code blocking); 3 policy denial
 `)
 }
 

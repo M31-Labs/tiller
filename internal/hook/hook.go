@@ -106,6 +106,15 @@ const (
 	ambientOutputCodex  ambientOutputProtocol = "codex"
 )
 
+// BlockingDenyError signals an ambient policy deny that must hard-block the
+// tool call in every Claude Code permission mode (including bypassPermissions).
+// cli.Main maps it to exit code 2 — the only exit code Claude Code treats as a
+// blocking PreToolUse error. (JSON permissionDecision:"deny" + exit 0 is part
+// of the permission flow, which bypassPermissions skips.)
+type BlockingDenyError struct{ Reason string }
+
+func (e *BlockingDenyError) Error() string { return e.Reason }
+
 // Identity holds the agent identity derived exclusively from environment.
 type Identity struct {
 	Role       string
@@ -280,6 +289,9 @@ func HandlePreToolUse(id Identity, event HookEvent, workspaceDir string) ([]byte
 		InScratch:   inScratch,
 		InWorkspace: inWorkspace,
 		RunID:       id.RunID,
+	}
+	if event.ToolName == "Bash" {
+		req.CommandClass = ClassifyCommand(req.Command)
 	}
 
 	// Load toolgate policy (from run's project dir or embedded default).
@@ -511,6 +523,13 @@ func handleAmbientPreToolUse(event HookEvent, stdout io.Writer, workspaceDir str
 		return writeCodexDeny(stdout, codexDenyReason(decisionReason))
 	}
 
+	// claude-code protocol: DENY must hard-block via exit 2, not JSON+exit-0.
+	// JSON permissionDecision:"deny" + exit 0 is the permission flow, which
+	// bypassPermissions skips. Exit 2 is honored in ALL permission modes.
+	if decision == "deny" {
+		return &BlockingDenyError{Reason: decisionReason}
+	}
+
 	out := HookSpecificOutputWrapper{
 		HookSpecificOutput: PreToolOutput{
 			HookEventName:            "PreToolUse",
@@ -527,6 +546,9 @@ func handleAmbientPreToolUse(event HookEvent, stdout io.Writer, workspaceDir str
 }
 
 func normalizeAmbientToolName(toolName string) string {
+	if strings.HasPrefix(toolName, "mcp__codex_apps__github.") {
+		return toolName
+	}
 	if idx := strings.LastIndex(toolName, "."); idx >= 0 && idx+1 < len(toolName) {
 		return toolName[idx+1:]
 	}
@@ -613,7 +635,7 @@ func codexAgentType(full HookEventFull) string {
 }
 
 func codexDenyReason(reason string) string {
-	if !strings.Contains(reason, "DenyExecution") {
+	if !strings.Contains(reason, "DenyExecution") && !strings.Contains(reason, "no match") {
 		return reason
 	}
 	return "RULE: DenyExecution: tiller: root can read/search directly, but this tool is execution or mutation. Use spawn_agent with agent_type=\"tiller-summary\" for status compaction, agent_type=\"tiller-worker\" for code changes/builds/tests, agent_type=\"tiller-debugger\" for debugging, agent_type=\"tiller-investigator\" for investigation, or agent_type=\"tiller-reviewer\" for review, then use wait_agent/close_agent to check in and finish."
