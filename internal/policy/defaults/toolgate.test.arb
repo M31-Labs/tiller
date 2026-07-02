@@ -82,6 +82,7 @@ test "hypha recall does NOT fire DenyHyphaDaemons" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "hypha recall go patterns"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: false
@@ -412,6 +413,116 @@ test "orchestrator read_mcp_resource is allowed (OrchestratorRead)" {
     expect rule OrchestratorRead matched
 }
 
+test "orchestrator GitHub connector fetch is allowed (OrchestratorRead)" {
+    given {
+        agent.role: "orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: "root"
+        tool.name: "mcp__codex_apps__github._fetch_pr"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule OrchestratorGitHubConnectorRead matched
+}
+
+test "orchestrator GitHub connector exact fetch is allowed (OrchestratorRead)" {
+    given {
+        agent.role: "orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: "root"
+        tool.name: "mcp__codex_apps__github._fetch"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule OrchestratorGitHubConnectorRead matched
+}
+
+test "orchestrator GitHub connector exact search is allowed (OrchestratorRead)" {
+    given {
+        agent.role: "orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: "root"
+        tool.name: "mcp__codex_apps__github._search"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule OrchestratorGitHubConnectorRead matched
+}
+
+test "orchestrator GitHub connector mutation is denied (OrchestratorDenyRest)" {
+    given {
+        agent.role: "orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: "root"
+        tool.name: "mcp__codex_apps__github._create_issue"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule OrchestratorRead not matched
+    expect rule OrchestratorGitHubConnectorRead not matched
+    expect rule OrchestratorDenyRest matched
+}
+
+test "orchestrator bare read-like underscore leaf is denied (OrchestratorDenyRest)" {
+    given {
+        agent.role: "orchestrator"
+        agent.depth: 0
+        agent.dispatch_id: "root"
+        tool.name: "_fetch_pr"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule OrchestratorRead not matched
+    expect rule OrchestratorGitHubConnectorRead not matched
+    expect rule OrchestratorDenyRest matched
+}
+
+test "read-only roles can use GitHub connector search (ReadTools)" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "mcp__codex_apps__github._search_issues"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule GitHubConnectorReadTools matched
+}
+
+test "read-only roles cannot use bare read-like underscore leaves (ReadTools)" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "_fetch_secret"
+        tool.command: ""
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: false
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadTools not matched
+    expect rule GitHubConnectorReadTools not matched
+}
+
 # ── OrchestratorEffector ──────────────────────────────────────────────────────
 
 test "orchestrator running tiller dispatch is allowed (OrchestratorEffector)" {
@@ -451,6 +562,7 @@ test "orchestrator running hypha recall is allowed (OrchestratorEffector)" {
         agent.dispatch_id: "root"
         tool.name: "Bash"
         tool.command: "hypha recall arbiter policy"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: false
@@ -672,6 +784,7 @@ test "investigator running ls is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "ls -la /home/user/project"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -687,6 +800,7 @@ test "investigator running rg search is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "rg 'func main' --type go ."
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -702,6 +816,7 @@ test "reviewer running git log is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "git log --oneline -20"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -717,6 +832,7 @@ test "chief-architect running git diff is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "git diff HEAD~1"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -732,6 +848,7 @@ test "deep-report running git show is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "git show HEAD:main.go"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -747,12 +864,109 @@ test "investigator running gts callgraph is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "gts callgraph main.Main"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
         run.id: "20260101-000000-0001"
     }
     expect rule ReadOnlyBash matched
+}
+
+test "investigator running canopy version probe is allowed (ReadOnlyBash)" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "canopy --version"
+        tool.command_class: "readonly"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash matched
+}
+
+test "investigator running canopy search is allowed (ReadOnlyBash)" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "canopy search symbol main.Main"
+        tool.command_class: "readonly"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash matched
+}
+
+test "investigator running canopy index build is not allowed by ReadOnlyBash" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "canopy index build ."
+        tool.command_class: "other"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash not matched
+}
+
+test "investigator running chained canopy search is not allowed by ReadOnlyBash" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "canopy search Foo; touch /tmp/x"
+        tool.command_class: "other"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash not matched
+}
+
+test "investigator running redirected canopy search is not allowed by ReadOnlyBash" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "canopy search Foo > /tmp/x"
+        tool.command_class: "other"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash not matched
+}
+
+test "investigator running env-prefixed canopy is not allowed by ReadOnlyBash" {
+    given {
+        agent.role: "investigator"
+        agent.depth: 1
+        agent.dispatch_id: "d01"
+        tool.name: "Bash"
+        tool.command: "FOO=1 canopy --version"
+        tool.command_class: "other"
+        tool.file_path: ""
+        tool.path_in_scratch: false
+        tool.path_in_workspace: true
+        run.id: "20260101-000000-0001"
+    }
+    expect rule ReadOnlyBash not matched
 }
 
 test "investigator running go doc is allowed (ReadOnlyBash)" {
@@ -762,6 +976,7 @@ test "investigator running go doc is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "go doc net/http.Handler"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: true
@@ -777,6 +992,7 @@ test "investigator running tiller poll is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "tiller poll d03"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: false
@@ -792,6 +1008,7 @@ test "investigator running hypha recall is allowed (ReadOnlyBash)" {
         agent.dispatch_id: "d01"
         tool.name: "Bash"
         tool.command: "hypha recall tiller patterns"
+        tool.command_class: "readonly"
         tool.file_path: ""
         tool.path_in_scratch: false
         tool.path_in_workspace: false

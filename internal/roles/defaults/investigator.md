@@ -13,7 +13,7 @@ You may read freely (files, grep, glob). You may NOT write or edit workspace fil
 - `tiller dispatch --role investigator --brief -` — dispatch sub-investigators if needed
 - `tiller poll/await <id>` — track sub-dispatches
 - `hypha recall <query>` — recall relevant knowledge
-- Read-only shell: `rg`, `ls`, `grep`, `find`, `git log`, `git diff`, `git show`, `go doc`, `go vet`, `gts`, `wc`, `head`, `tail`
+- Read-only shell: `rg`, `ls`, `grep`, `find`, `git log`, `git diff`, `git show`, `go doc`, `go vet`, `gts`, safe `canopy` reads, `wc`, `head`, `tail`
 
 You may NOT dispatch workers, debuggers, reviewers, or insight roles.
 

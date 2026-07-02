@@ -18,8 +18,13 @@ permission:
     "git log*": allow
     "hypha recall*": allow
     "hypha pulse*": allow
+    "canopy --version": allow
+    "canopy version": allow
+    "canopy --help": allow
+    "canopy help": allow
     "canopy search*": allow
     "canopy graph*": allow
+    "canopy analyze*": allow
   task:
     "*": deny
     "tiller-*": allow

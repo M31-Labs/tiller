@@ -63,6 +63,22 @@ rule OrchestratorRead priority 10 {
     }
     then Allow { reason: "orchestrator read/context gathering" }
 }
+rule OrchestratorGitHubConnectorRead priority 10 {
+    when segment orchestrator {
+        tool.name starts_with "mcp__codex_apps__github._fetch_" or
+        tool.name starts_with "mcp__codex_apps__github._get_" or
+        tool.name starts_with "mcp__codex_apps__github._list_" or
+        tool.name starts_with "mcp__codex_apps__github._search_" or
+        tool.name in [
+            "mcp__codex_apps__github._fetch",
+            "mcp__codex_apps__github._search",
+            "mcp__codex_apps__github._compare_commits",
+            "mcp__codex_apps__github._download_user_content",
+            "mcp__codex_apps__github._download_workflow_artifact"
+        ]
+    }
+    then Allow { reason: "orchestrator read-only GitHub connector tool" }
+}
 rule OrchestratorEffector priority 10 {
     when segment orchestrator {
         tool.name == "Bash" and
@@ -89,11 +105,7 @@ rule DenyWriteOutsideScratch priority 11 {
 rule ReadOnlyBash priority 12 {
     when segment readonly_bash_roles {
         tool.name == "Bash" and
-        (tool.command starts_with "tiller " or tool.command starts_with "hypha "
-         or tool.command starts_with "rg " or tool.command starts_with "ls "
-         or tool.command starts_with "git log" or tool.command starts_with "git diff"
-         or tool.command starts_with "git show" or tool.command starts_with "go doc"
-         or tool.command starts_with "gts ")
+        tool.command_class == "readonly"
     }
     then Allow { reason: "read-only command" }
 }
@@ -121,6 +133,22 @@ rule ReadTools priority 12 {
         ]
     }
     then Allow { reason: "reading is universal" }
+}
+rule GitHubConnectorReadTools priority 12 {
+    when {
+        tool.name starts_with "mcp__codex_apps__github._fetch_" or
+        tool.name starts_with "mcp__codex_apps__github._get_" or
+        tool.name starts_with "mcp__codex_apps__github._list_" or
+        tool.name starts_with "mcp__codex_apps__github._search_" or
+        tool.name in [
+            "mcp__codex_apps__github._fetch",
+            "mcp__codex_apps__github._search",
+            "mcp__codex_apps__github._compare_commits",
+            "mcp__codex_apps__github._download_user_content",
+            "mcp__codex_apps__github._download_workflow_artifact"
+        ]
+    }
+    then Allow { reason: "read-only GitHub connector tool" }
 }
 
 rule ExecutionAllow priority 50 {

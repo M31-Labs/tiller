@@ -73,7 +73,7 @@ For Codex, open or restart a Codex session in the installed project so Codex loa
 
 | Carve-out rule | What is permitted |
 |---|---|
-| `AllowReadOnlyBash` | Read-only Bash: `git log`, `ls`, `cat`, `gts *`, `hypha recall` (including `\| head` pipelines via `2>&1`), and equivalent read commands. Unquoted `>`, `>>`, `` ` ``, `$(` are denied. |
+| `AllowReadOnlyBash` | Read-only Bash: `git log`, `ls`, `cat`, `gts *`, safe Canopy reads such as `canopy --version` and `canopy search *`, `hypha recall` (including `\| head` pipelines via `2>&1`), stdout-only HTTP(S) curl GETs, and equivalent read commands. Unquoted `>`, `>>`, `` ` ``, `$(` are denied. |
 | `AllowMarkdownAuthoring` | `Write`/`Edit` on `*.md` paths - specs, plans, prompts, directives, briefs, code-in-docs. Code files, notebooks, no-extension paths are denied. |
 | `AllowOrchestrationTools` | `ToolSearch`, `Skill`, `AskUserQuestion`, `EnterPlanMode`/`ExitPlanMode`, `TaskCreate`/`TaskGet`/`TaskList`/`TaskUpdate`/`TaskOutput`/`TaskStop`, and Codex multi-agent tools such as `spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, and `close_agent`. |
 | `AllowPermittedBash` | Also allows constrained `codex exec` delegation when the command pins `gpt-5.5`, sets `model_reasoning_effort` to `xhigh`, `high`, or `medium`, avoids dangerous sandbox bypasses, and writes optional reports only under `.tiller/`. `xhigh` requires `--sandbox read-only`. |

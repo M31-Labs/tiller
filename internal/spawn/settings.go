@@ -143,6 +143,16 @@ func readonlyPerms(fableEntries []string) map[string]any {
 		"Bash(git show*)",
 		"Bash(go doc*)",
 		"Bash(gts *)",
+		"Bash(canopy --version)",
+		"Bash(canopy version)",
+		"Bash(canopy --help)",
+		"Bash(canopy help)",
+		"Bash(canopy search)",
+		"Bash(canopy search *)",
+		"Bash(canopy graph)",
+		"Bash(canopy graph *)",
+		"Bash(canopy analyze)",
+		"Bash(canopy analyze *)",
 	)
 	return map[string]any{
 		"deny":  orchestratorDeny(),

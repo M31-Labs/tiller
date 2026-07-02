@@ -14,7 +14,7 @@ You may read freely. You may write only within the run scratch space (`.tiller/r
 - `tiller poll/await <id>` — track dispatched investigators
 - `tiller note add -` — write notes to scratch
 - `hypha recall <query>` — recall relevant knowledge
-- Read-only shell: `rg`, `ls`, `git log`, `git diff`, `git show`, `go doc`, `gts`
+- Read-only shell: `rg`, `ls`, `git log`, `git diff`, `git show`, `go doc`, `gts`, safe `canopy` reads
 
 You may NOT dispatch workers, debuggers, reviewers, or other chief-architects.
 

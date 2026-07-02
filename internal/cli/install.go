@@ -1854,9 +1854,21 @@ func mergeHookList(hooks map[string]any, eventName string, entry settingsHookEnt
 			if !ok {
 				continue
 			}
-			if existingCmd, ok := hm["command"].(string); ok &&
-				(existingCmd == cmd || (hookCommandMatches(existingCmd) && hookCommandMatches(cmd))) {
+			existingCmd, ok := hm["command"].(string)
+			if !ok {
+				continue
+			}
+			if existingCmd == cmd {
 				return false // already present
+			}
+			if hookCommandMatches(existingCmd) && hookCommandMatches(cmd) {
+				for k := range hm {
+					delete(hm, k)
+				}
+				for k, v := range settingsHookCommandMap(entry.Hooks[0]) {
+					hm[k] = v
+				}
+				return true
 			}
 		}
 	}

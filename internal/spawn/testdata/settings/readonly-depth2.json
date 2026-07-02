@@ -37,7 +37,17 @@
       "Bash(git diff*)",
       "Bash(git show*)",
       "Bash(go doc*)",
-      "Bash(gts *)"
+      "Bash(gts *)",
+      "Bash(canopy --version)",
+      "Bash(canopy version)",
+      "Bash(canopy --help)",
+      "Bash(canopy help)",
+      "Bash(canopy search)",
+      "Bash(canopy search *)",
+      "Bash(canopy graph)",
+      "Bash(canopy graph *)",
+      "Bash(canopy analyze)",
+      "Bash(canopy analyze *)"
     ],
     "ask": [],
     "deny": [

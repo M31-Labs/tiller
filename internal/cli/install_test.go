@@ -47,6 +47,61 @@ func TestMergeHookEntries_Idempotent(t *testing.T) {
 	}
 }
 
+func TestMergeHookEntries_UpgradesStaleCodexHook(t *testing.T) {
+	for _, existingCommand := range []string{
+		"/usr/local/bin/tiller hook",
+		"tiller hook --backend claude-code",
+	} {
+		t.Run(existingCommand, func(t *testing.T) {
+			settings := map[string]any{}
+			stale := settingsHookEntry{
+				Matcher: ".*",
+				Hooks:   []settingsHookCommand{{Type: "command", Command: existingCommand}},
+			}
+			mergeHookEntriesForEvents(settings, stale, codexManagedHookEvents())
+
+			command := "/opt/tiller/bin/tiller hook --backend codex"
+			entry := settingsHookEntry{
+				Matcher: ".*",
+				Hooks: []settingsHookCommand{{
+					Type:          "command",
+					Command:       command,
+					Timeout:       30,
+					StatusMessage: "Checking Tiller ambient policy...",
+				}},
+			}
+			updated := mergeHookEntriesForEvents(settings, entry, codexManagedHookEvents())
+			if len(updated) != len(codexManagedHookEvents()) {
+				t.Fatalf("expected stale hooks to be updated for all Codex events, got %v", updated)
+			}
+
+			hooks := settings["hooks"].(map[string]any)
+			for _, eventName := range codexManagedHookEvents() {
+				list := hooks[eventName].([]any)
+				if len(list) != 1 {
+					t.Fatalf("%s: expected one hook entry after update, got %d", eventName, len(list))
+				}
+				hookList := list[0].(map[string]any)["hooks"].([]any)
+				cmd := hookList[0].(map[string]any)
+				if cmd["command"] != command {
+					t.Fatalf("%s command = %v, want %s", eventName, cmd["command"], command)
+				}
+				if cmd["timeout"] != 30 {
+					t.Fatalf("%s timeout = %v, want 30", eventName, cmd["timeout"])
+				}
+				if cmd["statusMessage"] == "" {
+					t.Fatalf("%s statusMessage not preserved during update", eventName)
+				}
+			}
+
+			idempotent := mergeHookEntriesForEvents(settings, entry, codexManagedHookEvents())
+			if len(idempotent) != 0 {
+				t.Fatalf("exact Codex hook should remain idempotent, got %v", idempotent)
+			}
+		})
+	}
+}
+
 func TestMergeHookEntries_PreservesExistingHooks(t *testing.T) {
 	// Pre-populate with an existing hook entry.
 	existing := map[string]any{
@@ -1024,6 +1079,14 @@ func TestRunInstallOpenCodeProject(t *testing.T) {
 		if !strings.Contains(string(orchestrator), want) {
 			t.Fatalf("OpenCode orchestrator missing %q:\n%s", want, string(orchestrator))
 		}
+	}
+	for _, want := range []string{"canopy --version", "canopy version", "canopy --help", "canopy help", "canopy search*", "canopy graph*", "canopy analyze*"} {
+		if !strings.Contains(string(orchestrator), want) {
+			t.Fatalf("OpenCode orchestrator missing Canopy permission %q:\n%s", want, string(orchestrator))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "agents", "tiller-summary.md")); err != nil {
+		t.Fatalf("OpenCode summary agent not installed: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "agents", "tiller-worker.md")); err != nil {
 		t.Fatalf("OpenCode worker agent not installed: %v", err)

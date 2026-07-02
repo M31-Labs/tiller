@@ -299,6 +299,57 @@ func TestDepth2DispatchDeny(t *testing.T) {
 	}
 }
 
+func TestManagedReadOnlyBashUsesCommandClassifier(t *testing.T) {
+	runDir := setupFixtureRun(t)
+	dispatchDir := filepath.Join(runDir, "dispatches", "d01")
+	os.MkdirAll(dispatchDir, 0o755)
+	writeTestMeta(t, runDir, "d01", "investigator", 1)
+
+	setEnv(t,
+		"TILLER_ROLE", "investigator",
+		"TILLER_DEPTH", "1",
+		"TILLER_DISPATCH_ID", "d01",
+		"TILLER_RUN_DIR", runDir,
+	)
+
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		{name: "canopy search", cmd: "canopy search Foo", want: "allow"},
+		{name: "canopy chain", cmd: "canopy search Foo; touch /tmp/x", want: "deny"},
+		{name: "canopy redirect", cmd: "canopy search Foo > /tmp/x", want: "deny"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input, err := json.Marshal(map[string]any{
+				"hook_event_name": "PreToolUse",
+				"tool_name":       "Bash",
+				"tool_input":      map[string]any{"command": tc.cmd},
+			})
+			if err != nil {
+				t.Fatalf("marshal input: %v", err)
+			}
+			out, err := runHookWithWorkspace(t, string(input), "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var wrapper struct {
+				HookSpecificOutput struct {
+					PermissionDecision string `json:"permissionDecision"`
+				} `json:"hookSpecificOutput"`
+			}
+			if err := json.Unmarshal(bytes.TrimSpace(out), &wrapper); err != nil {
+				t.Fatalf("parse output: %v (raw: %s)", err, out)
+			}
+			if wrapper.HookSpecificOutput.PermissionDecision != tc.want {
+				t.Fatalf("decision for %q = %q, want %q (raw: %s)", tc.cmd, wrapper.HookSpecificOutput.PermissionDecision, tc.want, out)
+			}
+		})
+	}
+}
+
 // TestPreToolUseAuditLine verifies that each PreToolUse writes a line to audit/toolgate.jsonl.
 func TestPreToolUseAuditLine(t *testing.T) {
 	runDir := setupFixtureRun(t)
