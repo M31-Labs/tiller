@@ -1066,10 +1066,10 @@ func trimShellToken(s string) string {
 // IsCheckpointCommit returns true for the narrow checkpoint/commit workflow
 // commands that a gated ambient root is permitted to run:
 //
-//   (a) git add <path>...: stages explicit paths (no wildcards, no -A/-u/--all/".").
-//   (b) buckley commit [safe-flags]: runs buckley commit with a conservative
-//       allowlist of flags; dangerous flags like --skip-entities, -graft,
-//       --graft, --no-verify, -m, --message, --model, --backend are rejected.
+//	(a) git add <path>...: stages explicit paths (no wildcards, no -A/-u/--all/".").
+//	(b) buckley commit [safe-flags]: runs buckley commit with a conservative
+//	    allowlist of flags; dangerous flags like --skip-entities, -graft,
+//	    --graft, --no-verify, -m, --message, --model, --backend are rejected.
 //
 // Single-segment only (no chaining, redirects, or substitution).
 func IsCheckpointCommit(cmd string) bool {
@@ -1146,7 +1146,7 @@ func isCheckpointBuckleyCommit(argv []string) bool {
 		"--min": true, "-min": true, "--minimal-output": true,
 		"--exclusive": true,
 		"--dry-run":   true,
-		"--push":       true, "--push=true": true, "--push=false": true, "--no-push": true,
+		"--push":      true, "--push=true": true, "--push=false": true, "--no-push": true,
 		"--cost": true, "--no-cost": true,
 	}
 

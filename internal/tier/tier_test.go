@@ -23,7 +23,7 @@ func TestDefaultsParse(t *testing.T) {
 		wantCount int
 		wantFirst string
 	}{
-		{"reason", 1, "claude-headless:anthropic/claude-opus-4-8"},
+		{"reason", 1, "claude-headless:anthropic/fable"},
 		{"scrutiny", 1, "claude-headless:anthropic/opus"},
 		{"execute", 2, "claude-headless:anthropic/sonnet"},
 	}
@@ -159,7 +159,7 @@ candidates = ["my-adapter:myprovider/mymodel"]
 	if err != nil {
 		t.Fatalf("Resolve reason: %v", err)
 	}
-	if cand.String() != "claude-headless:anthropic/claude-opus-4-8" {
+	if cand.String() != "claude-headless:anthropic/fable" {
 		t.Errorf("reason (non-overridden) = %q, want default", cand)
 	}
 }
@@ -303,17 +303,23 @@ func TestAmbientDefaultsParse(t *testing.T) {
 	if claude.Detector != "claude-jsonl-transcript" {
 		t.Errorf("claude detector = %q, want claude-jsonl-transcript", claude.Detector)
 	}
-	if got := claude.ModelTier("claude-opus-4-8"); got != "reason" {
-		t.Errorf("claude ModelTier(claude-opus-4-8) = %q, want reason", got)
+	if got := claude.ModelTier("claude-opus-4-8"); got != "scrutiny" {
+		t.Errorf("claude ModelTier(claude-opus-4-8) = %q, want scrutiny", got)
 	}
-	if got := claude.ModelTier("opus"); got != "reason" {
-		t.Errorf("claude ModelTier(opus) = %q, want reason", got)
+	if got := claude.ModelTier("opus"); got != "scrutiny" {
+		t.Errorf("claude ModelTier(opus) = %q, want scrutiny", got)
+	}
+	if got := claude.ModelTier("fable"); got != "reason" {
+		t.Errorf("claude ModelTier(fable) = %q, want reason", got)
 	}
 	if got := claude.ModelTier("claude-fable-5"); got != "reason" {
 		t.Errorf("claude ModelTier(claude-fable-5 legacy alias) = %q, want reason", got)
 	}
 	if !claude.GovernsTier("reason") {
 		t.Error("claude ambient config should govern reason tier")
+	}
+	if claude.GovernsTier("scrutiny") {
+		t.Error("claude ambient config classifies scrutiny models but should not govern scrutiny tier")
 	}
 	if claude.GovernsTier("execute") {
 		t.Error("claude ambient config should not govern execute tier")
@@ -375,7 +381,7 @@ execute_models = ["5.5 high"]
 	}
 
 	claude := cfg.AmbientConfig("claude-code")
-	if claude == nil || claude.ModelTier("opus") != "reason" || claude.ModelTier("fable") != "reason" {
+	if claude == nil || claude.ModelTier("fable") != "reason" || claude.ModelTier("opus") != "scrutiny" {
 		t.Fatal("non-overridden claude ambient config should keep embedded defaults and legacy aliases")
 	}
 }

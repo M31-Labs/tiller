@@ -11,12 +11,14 @@ tiller uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Claude Opus 4.8 guidance** - Claude Code defaults and user-facing guidance
-  now promote Opus 4.8 (`opus` / `claude-opus-4-8`) for reason-tier ambient
-  roots while retaining legacy Fable aliases, fixtures, and compatibility
-  paths for older transcripts and records. Deprecated `tiller dispatch --model
-  opus` still maps to the scrutiny tier for older scripts; use
-  `--model claude-opus-4-8` for reason-tier dispatch.
+- **Fable 5 orchestrator root restored** - with Claude Fable 5 (`claude-fable-5`)
+  available again, reason-tier defaults and all guidance return to `fable` as
+  the orchestrator root, reversing the temporary Opus 4.8 promotion. `opus` /
+  `claude-opus-4-8` returns to the scrutiny tier (investigation, review);
+  opus root sessions are no longer ambient-governed - use `/model fable` for
+  ambient mode. The deprecated `--model` alias maps fable/claude-fable-5→reason
+  and opus/claude-opus-4-8→scrutiny again (supersedes the unreleased Opus 4.8
+  guidance shift).
 - **Codex fallback ambient ledger hardening** - unmanaged Codex lifecycle
   observations now use a shared fallback ledger helper with `0700` parent
   directory permissions, `0600` file permissions, locked JSONL appends, clean

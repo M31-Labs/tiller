@@ -487,19 +487,21 @@ func TestDispatch_ModelAliasDeprecated(t *testing.T) {
 		wantTier string // the policy will route to this tier
 	}{
 		{"reviewer", "opus", "scrutiny"},
-		{"chief-architect", "claude-opus-4-8", "reason"},
+		{"chief-architect", "claude-opus-4-8", "scrutiny"},
 		{"chief-architect", "fable", "reason"},
+		{"chief-architect", "claude-fable-5", "reason"},
 		// Non-vacuous case: chief-architect defaults to the reason tier, so
 		// --model opus (which maps to scrutiny) only resolves to scrutiny when
-		// the deprecated alias mapping fires and the cost downgrade is honored.
-		// Removing the opus→scrutiny mapping would leave this routed at reason
-		// and fail this assertion.
+		// the deprecated opus→scrutiny alias mapping fires AND the cost
+		// downgrade (reason → scrutiny) is honored by the policy. Removing
+		// either the alias mapping or the downgrade would leave this routed
+		// at reason and fail this assertion.
 		{"chief-architect", "opus", "scrutiny"},
 		{"worker", "sonnet", "execute"},
 		{"worker", "haiku", "execute"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.model, func(t *testing.T) {
+		t.Run(tc.role+"_"+tc.model, func(t *testing.T) {
 			_, runDir, runID, st := makeDispatchTestEnv(t)
 			reg := adapter.NewRegistry()
 			reg.Register(newFakeAdapter("claude-headless", "full"))
@@ -543,8 +545,8 @@ func TestClaudeOpusAmbientAndDispatchAliasContracts(t *testing.T) {
 	if claude == nil {
 		t.Fatal("AmbientConfig(\"claude-code\") returned nil")
 	}
-	if got := claude.ModelTier("opus"); got != "reason" {
-		t.Fatalf("Claude ambient ModelTier(opus) = %q, want reason", got)
+	if got := claude.ModelTier("opus"); got != "scrutiny" {
+		t.Fatalf("Claude ambient ModelTier(opus) = %q, want scrutiny", got)
 	}
 	if !claude.GovernsTier("reason") {
 		t.Fatal("Claude ambient config should govern reason tier")

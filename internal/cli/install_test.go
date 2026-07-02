@@ -650,15 +650,15 @@ func TestInstallAgents_ContentCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tiller-architect.md not found: %v", err)
 	}
-	if !strings.Contains(string(data), "model: opus") {
-		t.Errorf("tiller-architect.md missing 'model: opus'; content:\n%s", string(data))
+	if !strings.Contains(string(data), "model: fable") {
+		t.Errorf("tiller-architect.md missing 'model: fable'; content:\n%s", string(data))
 	}
 	data, err = os.ReadFile(filepath.Join(agentsDir, "tiller-deep-report.md"))
 	if err != nil {
 		t.Fatalf("tiller-deep-report.md not found: %v", err)
 	}
-	if !strings.Contains(string(data), "model: opus") {
-		t.Errorf("tiller-deep-report.md missing 'model: opus'; content:\n%s", string(data))
+	if !strings.Contains(string(data), "model: fable") {
+		t.Errorf("tiller-deep-report.md missing 'model: fable'; content:\n%s", string(data))
 	}
 	data, err = os.ReadFile(filepath.Join(agentsDir, "tiller-summary.md"))
 	if err != nil {

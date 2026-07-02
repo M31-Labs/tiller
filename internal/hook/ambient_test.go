@@ -201,27 +201,29 @@ func TestLargeLineThenFable_AmbientEnforced(t *testing.T) {
 	}
 }
 
-// ─── Model switch (legacy fable → Opus 4.8) ──────────────────────────────────
+// ─── Model switch (fable → Opus) ─────────────────────────────────────────────
 
-// TestFableThenOpus: after a /model switch from legacy fable to Opus 4.8, the
-// last qualifying line remains governed as reason-tier.
+// TestFableThenOpus: after a /model switch from fable to Opus, the last
+// qualifying line is opus, which is scrutiny-tier (not in govern_tiers), so
+// detection must clear: ("", false), fail-open/ungoverned.
 func TestFableThenOpus(t *testing.T) {
 	p := transcriptPath(t, "fable_then_opus.jsonl")
 	tier, ok := claudecode.DetectTier(p)
-	if !ok {
-		t.Errorf("got ok=false, want true (opus is governed reason-tier)")
+	if ok {
+		t.Errorf("got ok=true, want false (opus is scrutiny-tier, not governed)")
 	}
-	if tier != "reason" {
-		t.Errorf("got tier=%q, want reason", tier)
+	if tier != "" {
+		t.Errorf("got tier=%q, want empty", tier)
 	}
 }
 
-// TestFableThenOpus_AmbientEnforced: via Run path, Opus 4.8 is governed.
-func TestFableThenOpus_AmbientEnforced(t *testing.T) {
+// TestFableThenOpus_AmbientPassthrough: via Run path, an opus session after a
+// /model switch is scrutiny-tier and not governed, so the hook passes through.
+func TestFableThenOpus_AmbientPassthrough(t *testing.T) {
 	p := transcriptPath(t, "fable_then_opus.jsonl")
 	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
-	if decision != "deny" {
-		t.Errorf("expected deny for opus session after /model switch, got %q", decision)
+	if decision != "passthrough" {
+		t.Errorf("expected passthrough for opus session after /model switch (scrutiny is ungoverned), got %q", decision)
 	}
 }
 
@@ -317,8 +319,9 @@ func TestAmbientFableDenyEdit(t *testing.T) {
 	}
 }
 
-// TestAmbientOpusEnforced: Opus 4.8 session → Edit → deny.
-func TestAmbientOpusEnforced(t *testing.T) {
+// TestAmbientOpusPassthrough: Opus session → Edit → passthrough (opus is
+// scrutiny-tier, which is not in govern_tiers, so it is ungoverned).
+func TestAmbientOpusPassthrough(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "t.jsonl")
 	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-4-8","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
@@ -327,8 +330,8 @@ func TestAmbientOpusEnforced(t *testing.T) {
 	}
 
 	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
-	if decision != "deny" {
-		t.Errorf("expected deny for opus session, got %q", decision)
+	if decision != "passthrough" {
+		t.Errorf("expected passthrough for opus session (scrutiny is ungoverned), got %q", decision)
 	}
 }
 
@@ -2882,23 +2885,14 @@ func runClaudeCodeAmbientHookRaw(t *testing.T, transcriptFile, toolName string, 
 	return err, bytes.TrimSpace(buf.Bytes())
 }
 
-// opusTranscript writes a minimal claude-opus-4-8 transcript (governed, reason-tier).
-func opusTranscript(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	p := filepath.Join(dir, "t.jsonl")
-	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-4-8","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
-	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
-	}
-	return p
-}
-
 // TestBlockingDenyError_MutatingBashReturnsBlockingDenyError: a governed root
 // ambient session with a mutating Bash command must return *BlockingDenyError
 // (not nil), the reason must contain "DenyExecution", and stdout must be empty.
+//
+// Uses fableTranscript (not opus) because opus is scrutiny-tier and not in
+// govern_tiers, so it would not exercise the governed path.
 func TestBlockingDenyError_MutatingBashReturnsBlockingDenyError(t *testing.T) {
-	p := opusTranscript(t)
+	p := fableTranscript(t)
 	err, out := runClaudeCodeAmbientHookRaw(t, p, "Bash", map[string]any{"command": "date"})
 
 	if err == nil {
@@ -2919,8 +2913,11 @@ func TestBlockingDenyError_MutatingBashReturnsBlockingDenyError(t *testing.T) {
 // TestBlockingDenyError_ReadToolAllowsAndWritesJSON: a governed root ambient
 // session with a permitted Read tool must return nil error AND write allow JSON
 // to stdout (allow path unchanged).
+//
+// Uses fableTranscript (not opus) because opus is scrutiny-tier and not in
+// govern_tiers, so it would not exercise the governed path.
 func TestBlockingDenyError_ReadToolAllowsAndWritesJSON(t *testing.T) {
-	p := opusTranscript(t)
+	p := fableTranscript(t)
 	err, out := runClaudeCodeAmbientHookRaw(t, p, "Read", map[string]any{"file_path": "/workspace/foo.go"})
 
 	if err != nil {
@@ -2935,8 +2932,11 @@ func TestBlockingDenyError_ReadToolAllowsAndWritesJSON(t *testing.T) {
 // a governed root ambient session dispatching a generic Agent (no tiller type,
 // no model) must return *BlockingDenyError with reason containing
 // "DenyImplicitReasonInheritance", and stdout must be empty.
+//
+// Uses fableTranscript (not opus) because opus is scrutiny-tier and not in
+// govern_tiers, so it would not exercise the governed path.
 func TestBlockingDenyError_AgentImplicitInheritanceReturnsBlockingDenyError(t *testing.T) {
-	p := opusTranscript(t)
+	p := fableTranscript(t)
 	err, out := runClaudeCodeAmbientHookRaw(t, p, "Agent", map[string]any{
 		"subagent_type": "Explore",
 	})
@@ -2979,13 +2979,17 @@ func TestBlockingDenyError_NonGovernedModelFailsOpen(t *testing.T) {
 
 // TestBlockingDenyError_AmbientDisabledFailsOpen: when .tiller/ambient.disabled
 // marker is present, the hook must return nil and write nothing (fail-open).
+//
+// Uses fableTranscript (not opus) so the disable marker is verified against a
+// session that would otherwise be governed; opus is scrutiny-tier and would
+// fail open regardless of the marker.
 func TestBlockingDenyError_AmbientDisabledFailsOpen(t *testing.T) {
 	workspace := t.TempDir()
 	if _, _, err := ambientgate.Disable(workspace); err != nil {
 		t.Fatalf("disable ambient: %v", err)
 	}
 
-	p := opusTranscript(t)
+	p := fableTranscript(t)
 	event := map[string]any{
 		"hook_event_name": "PreToolUse",
 		"tool_name":       "Bash",
