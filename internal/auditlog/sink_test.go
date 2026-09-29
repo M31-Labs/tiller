@@ -233,7 +233,7 @@ func TestArbiterReplay(t *testing.T) {
 		if _, err := os.Stat("/tmp/arbiter"); err == nil {
 			arbiterBin = "/tmp/arbiter"
 		} else {
-			t.Skip("arbiter binary not found; build with: cd /home/draco/work/arbiter && go build -o /tmp/arbiter ./cmd/arbiter")
+			t.Skip("arbiter binary not found; build with: cd path/to/arbiter && go build -o /tmp/arbiter ./cmd/arbiter")
 		}
 	}
 
@@ -268,8 +268,8 @@ func TestArbiterReplay(t *testing.T) {
 	// Find toolgate.arb.
 	toolgatePath := ""
 	for _, candidate := range []string{
-		"/home/draco/work/tiller/internal/policy/defaults/toolgate.arb",
-		"/home/draco/work/tiller/policy/toolgate.arb",
+		"../policy/defaults/toolgate.arb",
+		"../../policy/toolgate.arb",
 	} {
 		if _, err := os.Stat(candidate); err == nil {
 			toolgatePath = candidate
