@@ -394,7 +394,7 @@ func TestIsCodexExec(t *testing.T) {
 		{`codex exec -m gpt-5.5 -c model_reasoning_effort=xhigh --sandbox read-only --output-last-message .tiller/reports/review.md "review"`, true},
 		{`codex exec -m gpt-5.5 -c model_reasoning_effort=medium --cd . "work"`, true},
 		{`codex exec -m gpt-5.5 -c model_reasoning_effort=medium --cd packages/app "work"`, true},
-		{`/home/draco/.bun/bin/codex exec -m gpt-5.5 -c model_reasoning_effort=medium --json --color never "work"`, true},
+		{`/home/user/.bun/bin/codex exec -m gpt-5.5 -c model_reasoning_effort=medium --json --color never "work"`, true},
 
 		// Must be explicit about model and effort.
 		{`codex exec -c model_reasoning_effort=medium "work"`, false},

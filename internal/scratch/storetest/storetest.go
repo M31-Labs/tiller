@@ -904,7 +904,7 @@ func testBuildDispatchTreeV2Fields(t *testing.T, s scratch.Store) {
 			Workspace: sandbox.WorkspaceOverlay,
 			Network:   sandbox.NetworkDisabled,
 			Horizon: []sandbox.HorizonManifest{{
-				Path:       "/home/draco/work/horizon/examples/execdeny/exec.cap.json",
+				Path:       "/home/user/work/horizon/examples/execdeny/exec.cap.json",
 				SHA256:     "abc123",
 				Capability: "kernel.process.exec.deny",
 			}},
