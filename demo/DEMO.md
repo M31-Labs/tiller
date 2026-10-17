@@ -89,12 +89,12 @@ tiller runs show "$RUN"
 
 **Expected output (dispatches section)**:
 ```
-root orchestrator(fable) [completed] → dispatches/root/report.md
+root orchestrator(opus-5-5) [completed] → dispatches/root/report.md
   └─ d01 investigator(sonnet) [completed] → dispatches/d01/report.md
   └─ d02 worker(sonnet) [completed] → dispatches/d02/report.md
 ```
 
-Root must show model `fable`; children must show `sonnet` or `haiku`.
+Root must show model `opus-5-5` (the default reason-tier candidate; it shows `fable` only if the project's `.tiller/models.toml` sets `[tiers.reason]` to fable); children must show `sonnet` or `haiku`.
 
 ---
 

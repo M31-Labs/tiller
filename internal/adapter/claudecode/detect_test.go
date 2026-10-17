@@ -129,6 +129,35 @@ func TestFableThenOpus(t *testing.T) {
 	}
 }
 
+// TestFableThenOpus55: after a /model switch from fable to Opus 5.5, the last
+// qualifying line is claude-opus-5-5, which is reason-tier, so the session
+// stays governed.
+func TestFableThenOpus55(t *testing.T) {
+	p := fixturePath(t, "fable_then_opus_5_5.jsonl")
+	tier, ok := DetectTier(p)
+	if !ok {
+		t.Errorf("got ok=false, want true (opus-5-5 is governed reason-tier)")
+	}
+	if tier != "reason" {
+		t.Errorf("got tier=%q, want reason", tier)
+	}
+}
+
+// TestOpus55ThenOpus: Opus 5.5 and Opus 4.8 are separate tokens. After a
+// /model switch from claude-opus-5-5 to claude-opus-4-8 the last qualifying
+// line is scrutiny-tier (not in govern_tiers), so detection must clear:
+// ("", false), fail-open/ungoverned.
+func TestOpus55ThenOpus(t *testing.T) {
+	p := fixturePath(t, "opus_5_5_then_opus.jsonl")
+	tier, ok := DetectTier(p)
+	if ok {
+		t.Errorf("got ok=true, want false (opus 4.8 is scrutiny-tier, not governed)")
+	}
+	if tier != "" {
+		t.Errorf("got tier=%q, want empty", tier)
+	}
+}
+
 // ─── First turn / empty transcript ───────────────────────────────────────────
 
 // TestFirstTurnNoAssistant: a transcript with no assistant line yet → fail open.
@@ -169,6 +198,8 @@ func TestIsFableModel(t *testing.T) {
 	}{
 		{"claude-fable-5", true},
 		{"fable", true},
+		{"claude-opus-5-5", true},
+		{"opus-5-5", true},
 		{"claude-opus-4-8", false},
 		{"claude-sonnet-4-5", false},
 		{"", false},

@@ -227,6 +227,55 @@ func TestFableThenOpus_AmbientPassthrough(t *testing.T) {
 	}
 }
 
+// TestFableThenOpus55: after a /model switch from fable to Opus 5.5, the last
+// qualifying line is claude-opus-5-5, which is reason-tier, so the session
+// stays governed.
+func TestFableThenOpus55(t *testing.T) {
+	p := transcriptPath(t, "fable_then_opus_5_5.jsonl")
+	tier, ok := claudecode.DetectTier(p)
+	if !ok {
+		t.Errorf("got ok=false, want true (opus-5-5 is governed reason-tier)")
+	}
+	if tier != "reason" {
+		t.Errorf("got tier=%q, want reason", tier)
+	}
+}
+
+// TestFableThenOpus55_AmbientEnforced: via Run path, an Opus 5.5 session after
+// a /model switch from fable is governed like fable: Edit is denied.
+func TestFableThenOpus55_AmbientEnforced(t *testing.T) {
+	p := transcriptPath(t, "fable_then_opus_5_5.jsonl")
+	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
+	if decision != "deny" {
+		t.Errorf("expected deny for opus-5-5 session after /model switch, got %q", decision)
+	}
+}
+
+// TestOpus55ThenOpus: Opus 5.5 and Opus 4.8 are separate tokens. After a
+// /model switch from claude-opus-5-5 to claude-opus-4-8 the last qualifying
+// line is scrutiny-tier (not in govern_tiers), so detection must clear:
+// ("", false), fail-open/ungoverned.
+func TestOpus55ThenOpus(t *testing.T) {
+	p := transcriptPath(t, "opus_5_5_then_opus.jsonl")
+	tier, ok := claudecode.DetectTier(p)
+	if ok {
+		t.Errorf("got ok=true, want false (opus 4.8 is scrutiny-tier, not governed)")
+	}
+	if tier != "" {
+		t.Errorf("got tier=%q, want empty", tier)
+	}
+}
+
+// TestOpus55ThenOpus_AmbientPassthrough: via Run path, switching from Opus 5.5
+// back to Opus 4.8 ends governance, so the hook passes through.
+func TestOpus55ThenOpus_AmbientPassthrough(t *testing.T) {
+	p := transcriptPath(t, "opus_5_5_then_opus.jsonl")
+	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
+	if decision != "passthrough" {
+		t.Errorf("expected passthrough for opus 4.8 session after switching from opus-5-5 (scrutiny is ungoverned), got %q", decision)
+	}
+}
+
 // ─── First turn / empty transcript ───────────────────────────────────────────
 
 // TestFirstTurnNoAssistant: a transcript with no assistant line yet returns
@@ -332,6 +381,29 @@ func TestAmbientOpusPassthrough(t *testing.T) {
 	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
 	if decision != "passthrough" {
 		t.Errorf("expected passthrough for opus session (scrutiny is ungoverned), got %q", decision)
+	}
+}
+
+// TestAmbientOpus55DenyEdit: Opus 5.5 session → Edit → deny. Opus 5.5 is
+// reason-tier, so it is ambient-governed the same way fable is.
+func TestAmbientOpus55DenyEdit(t *testing.T) {
+	p := opus55Transcript(t)
+
+	decision, _ := runAmbientHookWithTranscript(t, p, "Edit")
+	if decision != "deny" {
+		t.Errorf("expected deny for Edit in opus-5-5 ambient session, got %q", decision)
+	}
+}
+
+// TestAmbientOpus55AllowRead: Opus 5.5 session → Read → allow. An explicit
+// "allow" (not "passthrough") shows the session was governed and the policy
+// permitted the read.
+func TestAmbientOpus55AllowRead(t *testing.T) {
+	p := opus55Transcript(t)
+
+	decision, _ := runAmbientHookWithTranscript(t, p, "Read")
+	if decision != "allow" {
+		t.Errorf("expected allow for Read in opus-5-5 ambient session, got %q", decision)
 	}
 }
 
@@ -528,6 +600,19 @@ func fableTranscript(t *testing.T) string {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "t.jsonl")
 	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
+	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	return p
+}
+
+// opus55Transcript writes a minimal claude-opus-5-5 transcript (governed,
+// reason-tier) to a temp file and returns its path.
+func opus55Transcript(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "t.jsonl")
+	line := `{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
 	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
@@ -2748,6 +2833,50 @@ func TestGap2_ArchitectWithFableModelAllowed(t *testing.T) {
 	})
 	if decision != "allow" {
 		t.Errorf("expected allow for tiller-architect with reason-tier model, got %q", decision)
+	}
+}
+
+// TestGap2_WorkerWithOpus55ModelDenied: opus-5-5 is a reason-tier model, so a
+// Task tiller-worker with an explicit opus-5-5 model is denied the same way an
+// explicit fable model is (DenyReasonModelSubagent).
+func TestGap2_WorkerWithOpus55ModelDenied(t *testing.T) {
+	p := fableTranscript(t)
+	for _, model := range []string{"opus-5-5", "claude-opus-5-5"} {
+		decision := runAmbientHookFull(t, p, "Task", map[string]any{
+			"subagent_type": "tiller-worker",
+			"model":         model,
+		})
+		if decision != "deny" {
+			t.Errorf("model %q: expected deny for tiller-worker with reason-tier model, got %q", model, decision)
+		}
+	}
+}
+
+// TestGap2_ArchitectWithOpus55ModelAllowed: Task tiller-architect with an
+// explicit opus-5-5 model is allowed (architect exception).
+func TestGap2_ArchitectWithOpus55ModelAllowed(t *testing.T) {
+	p := fableTranscript(t)
+	for _, model := range []string{"opus-5-5", "claude-opus-5-5"} {
+		decision := runAmbientHookFull(t, p, "Task", map[string]any{
+			"subagent_type": "tiller-architect",
+			"model":         model,
+		})
+		if decision != "allow" {
+			t.Errorf("model %q: expected allow for tiller-architect with reason-tier model, got %q", model, decision)
+		}
+	}
+}
+
+// TestGap2_GeneralPurposeNoModelDenied_Opus55Root: an Opus 5.5 root is a
+// governed reason-tier session, so a Task with no model inherits that
+// reason-tier model → deny (DenyImplicitReasonInheritance).
+func TestGap2_GeneralPurposeNoModelDenied_Opus55Root(t *testing.T) {
+	p := opus55Transcript(t)
+	decision := runAmbientHookFull(t, p, "Task", map[string]any{
+		"subagent_type": "general-purpose",
+	})
+	if decision != "deny" {
+		t.Errorf("expected deny for general-purpose with no model on opus-5-5 root, got %q", decision)
 	}
 }
 

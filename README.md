@@ -61,7 +61,7 @@ For Claude Code, then in any `claude` session:
 /model fable
 ```
 
-Ambient mode engages immediately. The fable root is restricted to orchestration-only tools - with targeted carve-outs described below. Execution is automatically delegated to tiller-* subagents on cheaper models, while read-only investigation and review may use Opus, and deep design and exhaustive reports may use Fable 5, when warranted. The concrete Claude model token is `claude-fable-5`; `fable` is the Claude Code alias used in persona frontmatter and `/model` guidance.
+Ambient mode engages immediately. The fable root is restricted to orchestration-only tools - with targeted carve-outs described below. Execution is automatically delegated to tiller-* subagents on cheaper models, while read-only investigation and review may use Opus, and deep design and exhaustive reports may use Opus 5.5, when warranted. The concrete Claude model token is `claude-fable-5`; `fable` is the Claude Code alias used in `/model` guidance. Opus 5.5 is the primary reason-tier model: `/model opus-5-5` (concrete token `claude-opus-5-5`) is governed the same way, and `opus-5-5` is what `tiller install` writes into the architect and deep-report personas. Fable stays available via `/model fable`. Plain `opus` / `claude-opus-4-8` is not governed.
 
 For Codex, open or restart a Codex session in the installed project so Codex loads the project `.codex/` config, hooks, and custom agents. Codex remains silent at startup unless `SessionStart` can prove the root session maps to a governed tier, such as `gpt-5.5 xhigh`, from the hook payload or transcript. When that proof exists, `SessionStart` adds the Tiller operating context up front. `SubagentStart` adds role-specific context for each `tiller-*` agent. For OpenCode, open or restart OpenCode in the installed project and switch to the `tiller-orchestrator` primary agent.
 
@@ -112,12 +112,12 @@ When the reason-tier root delegates via the Agent/Task tool, these personas rout
 | `tiller-debugger` | sonnet | execute | Systematic debugging - root-cause, fix, verify |
 | `tiller-investigator` | opus | scrutiny | Deep read-only investigation, code tracing, adversarial verification |
 | `tiller-reviewer` | opus | scrutiny | Code review - correctness, security, quality |
-| `tiller-architect` | fable | reason | Architectural specs, deep design, complex trade-off analysis |
-| `tiller-deep-report` | fable | reason | Exhaustive multi-source research reports |
+| `tiller-architect` | opus-5-5 | reason | Architectural specs, deep design, complex trade-off analysis |
+| `tiller-deep-report` | opus-5-5 | reason | Exhaustive multi-source research reports |
 
 Claude Code deny reasons mention the Task tool. Codex deny reasons are Codex-native: the root can read/search directly, execution or mutation should use `spawn_agent` with the right `agent_type`, then `wait_agent`/`close_agent`.
 
-**Enforcement layering.** Ambient mode governs the root reason-tier session only. Subagents spawned via Task are unaffected by ambient policy; they pass through. Their model is baked into the persona frontmatter (`model: sonnet`/`opus`/`fable`), which is the primary cost lever in ambient mode.
+**Enforcement layering.** Ambient mode governs the root reason-tier session only. Subagents spawned via Task are unaffected by ambient policy; they pass through. Their model is baked into the persona frontmatter (`model: sonnet`/`opus`/`opus-5-5`), which is the primary cost lever in ambient mode.
 
 ## Codex Operating Profile
 
@@ -170,7 +170,7 @@ tiller speaks three tiers throughout - policies route on them, audit logs record
 
 | Tier | Role in the system | Default candidate |
 |---|---|---|
-| `reason` | Orchestration, planning, deep analysis | `claude-headless:anthropic/fable` |
+| `reason` | Orchestration, planning, deep analysis | `claude-headless:anthropic/opus-5-5` (fallback: fable) |
 | `scrutiny` | Read-only investigation, review | `claude-headless:anthropic/opus` |
 | `execute` | Implementation, file mutation, command execution | `claude-headless:anthropic/sonnet` (fallback: haiku) |
 
@@ -178,7 +178,7 @@ These defaults live in `internal/tier/defaults/models.toml`. Override them for a
 
 ```toml
 [tiers.reason]
-candidates = ["claude-headless:anthropic/fable"]
+candidates = ["claude-headless:anthropic/opus-5-5"]
 
 [tiers.scrutiny]
 candidates = ["claude-headless:anthropic/opus"]
@@ -189,7 +189,7 @@ candidates = ["claude-headless:anthropic/sonnet", "claude-headless:anthropic/hai
 [ambient.claude-code]
 detector = "claude-jsonl-transcript"
 govern_tiers = ["reason"]
-reason_models = ["fable", "claude-fable-5"]
+reason_models = ["opus-5-5", "claude-opus-5-5", "fable", "claude-fable-5"]
 scrutiny_models = ["opus", "claude-opus-4-8"]
 execute_models = ["sonnet", "claude-sonnet-4-6", "haiku", "claude-haiku-4-5", "claude-haiku-4-5-20251001"]
 
@@ -200,13 +200,13 @@ reason_models = ["5.5 xhigh", "gpt-5.5 xhigh"]
 execute_models = ["5.5 high", "5.5 medium", "5.5 low", "gpt-5.5 high", "gpt-5.5 medium", "gpt-5.5 low"]
 ```
 
-Each candidate is `adapter:provider/model`. The first candidate that resolves wins; haiku serves as a canary or fallback for the execute tier.
+Each candidate is `adapter:provider/model`. When a tier lists more than one candidate, tiller picks one by a stable hash of the run ID, so a run always gets the same candidate for that tier. The execute tier uses this for sonnet and haiku. The reason tier has one candidate, opus-5-5, so `tiller run` roots and reason-tier dispatches always use it. Fable is the secondary reason model: switch a root session to it with `/model fable`, or set `[tiers.reason]` to fable in `.tiller/models.toml` to route headless reason work to it. Tiller does not fail over between the two on its own. The first alias in `reason_models` (`opus-5-5`) is the one `tiller install` writes into the architect and deep-report personas.
 
 Command (non-Claude) backends use the `command` adapter - see [Non-Claude Backends](#non-claude-backends) below.
 
 `[ambient.<backend>]` sections are for interactive ambient sessions. They map backend-specific model strings to tiller tier labels before policy evaluation. Claude Code reads root assistant model IDs from its JSONL transcript. Codex reads the hook payload plus transcript `turn_context` and normalizes `gpt-5.5` with `xhigh` into the alias `gpt-5.5 xhigh` (or the shorthand `5.5 xhigh`) before policy evaluation.
 
-Claude Code's `fable` and `opus` tokens map cleanly to separate tiers in Tiller: ambient root transcript detection governs `fable`/`claude-fable-5` as reason-tier, while `opus`/`claude-opus-4-8` root sessions are no longer ambient-governed and managed/persona routing classifies investigator and reviewer as scrutiny roles.
+Claude Code's `opus-5-5`, `fable`, and `opus` tokens map cleanly to tiers in Tiller: ambient root transcript detection governs `opus-5-5`/`claude-opus-5-5` (primary) and `fable`/`claude-fable-5` as reason-tier, while `opus`/`claude-opus-4-8` root sessions are no longer ambient-governed and managed/persona routing classifies investigator and reviewer as scrutiny roles. `opus-5-5` is a separate token from `opus`; the two are matched exactly, never by prefix.
 
 For Claude Code installs, `tiller install` renders the `model:` frontmatter in the `tiller-*` personas from `[ambient.claude-code]`: worker/debugger use the execute alias, architect/deep-report use the reason alias, and investigator/reviewer use the scrutiny alias when present or the reason alias otherwise. This keeps persona routing configurable without editing embedded markdown templates.
 
@@ -244,7 +244,7 @@ tiller promote <run-id>
 user: tiller run "<task>"
  -- tiller (root CLI)
      -- creates .tiller/runs/<run-id>/
-     -- spawns orchestrator: claude -p <task> --model fable \
+     -- spawns orchestrator: claude -p <task> --model <tier-resolved model> \
      |          --settings <generated> --permission-mode dontAsk \
      |          --append-system-prompt roles/orchestrator.md
      |  (env: TILLER_ROLE=orchestrator, TILLER_DEPTH=0,

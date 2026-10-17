@@ -23,7 +23,7 @@ func TestDefaultsParse(t *testing.T) {
 		wantCount int
 		wantFirst string
 	}{
-		{"reason", 1, "claude-headless:anthropic/fable"},
+		{"reason", 1, "claude-headless:anthropic/opus-5-5"},
 		{"scrutiny", 1, "claude-headless:anthropic/opus"},
 		{"execute", 2, "claude-headless:anthropic/sonnet"},
 	}
@@ -159,8 +159,45 @@ candidates = ["my-adapter:myprovider/mymodel"]
 	if err != nil {
 		t.Fatalf("Resolve reason: %v", err)
 	}
-	if cand.String() != "claude-headless:anthropic/fable" {
+	if cand.String() != "claude-headless:anthropic/opus-5-5" {
 		t.Errorf("reason (non-overridden) = %q, want default", cand)
+	}
+}
+
+// TestProjectOverrideReasonFableOnly verifies the opt-in to Fable for headless
+// reason work: the embedded default is opus-5-5, and a project that sets
+// [tiers.reason] to fable alone resolves every bucket to fable. The ambient
+// section is separate and keeps the embedded defaults, so opus-5-5 root
+// sessions stay governed.
+func TestProjectOverrideReasonFableOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	tillerDir := filepath.Join(tmpDir, ".tiller")
+	if err := os.MkdirAll(tillerDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	override := `[tiers.reason]
+candidates = ["claude-headless:anthropic/fable"]
+`
+	if err := os.WriteFile(filepath.Join(tillerDir, "models.toml"), []byte(override), 0644); err != nil {
+		t.Fatalf("write override: %v", err)
+	}
+
+	cfg, err := tier.Load(tmpDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for bucket := 0; bucket < 4; bucket++ {
+		cand, err := cfg.Resolve("reason", bucket)
+		if err != nil {
+			t.Fatalf("Resolve(reason, %d): %v", bucket, err)
+		}
+		if got := cand.String(); got != "claude-headless:anthropic/fable" {
+			t.Errorf("Resolve(reason, %d) = %q, want fable only", bucket, got)
+		}
+	}
+	claude := cfg.AmbientConfig("claude-code")
+	if claude == nil || claude.ModelTier("opus-5-5") != "reason" {
+		t.Error("tier override should not change ambient classification of opus-5-5")
 	}
 }
 
@@ -315,6 +352,18 @@ func TestAmbientDefaultsParse(t *testing.T) {
 	if got := claude.ModelTier("claude-fable-5"); got != "reason" {
 		t.Errorf("claude ModelTier(claude-fable-5 legacy alias) = %q, want reason", got)
 	}
+	if got := claude.ModelTier("opus-5-5"); got != "reason" {
+		t.Errorf("claude ModelTier(opus-5-5) = %q, want reason", got)
+	}
+	if got := claude.ModelTier("claude-opus-5-5"); got != "reason" {
+		t.Errorf("claude ModelTier(claude-opus-5-5) = %q, want reason", got)
+	}
+	// Opus 5.5 is the preferred reason model: install renders the architect and
+	// deep-report persona `model:` line from the first reason alias. Fable is
+	// still classified as reason, but it is listed after opus-5-5.
+	if got := claude.PreferredModel("reason"); got != "opus-5-5" {
+		t.Errorf("claude PreferredModel(reason) = %q, want opus-5-5", got)
+	}
 	if !claude.GovernsTier("reason") {
 		t.Error("claude ambient config should govern reason tier")
 	}
@@ -381,8 +430,36 @@ execute_models = ["5.5 high"]
 	}
 
 	claude := cfg.AmbientConfig("claude-code")
-	if claude == nil || claude.ModelTier("fable") != "reason" || claude.ModelTier("opus") != "scrutiny" {
+	if claude == nil || claude.ModelTier("fable") != "reason" || claude.ModelTier("opus-5-5") != "reason" || claude.ModelTier("opus") != "scrutiny" {
 		t.Fatal("non-overridden claude ambient config should keep embedded defaults and legacy aliases")
+	}
+}
+
+// TestReasonTierCandidates_Opus55 pins opus-5-5 as the only default headless
+// reason candidate. Resolve picks by bucket modulo candidate count, so a single
+// candidate resolves identically for every bucket, and fable is reachable only
+// through an explicit /model fable root or a project [tiers.reason] override.
+// The candidate list is unexported, so the test sweeps more buckets than any
+// plausible candidate list and counts distinct results.
+func TestReasonTierCandidates_Opus55(t *testing.T) {
+	cfg, err := tier.Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	const want = "claude-headless:anthropic/opus-5-5"
+	distinct := make(map[string]bool)
+	for bucket := 0; bucket < 16; bucket++ {
+		cand, err := cfg.Resolve("reason", bucket)
+		if err != nil {
+			t.Fatalf("Resolve(reason, %d): %v", bucket, err)
+		}
+		if got := cand.String(); got != want {
+			t.Errorf("Resolve(reason, %d) = %q, want %q", bucket, got, want)
+		}
+		distinct[cand.String()] = true
+	}
+	if len(distinct) != 1 {
+		t.Errorf("reason tier resolved %d distinct candidates, want 1 (opus-5-5 only): %v", len(distinct), distinct)
 	}
 }
 

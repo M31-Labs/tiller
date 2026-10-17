@@ -19,6 +19,20 @@ tiller uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambient mode. The deprecated `--model` alias maps fable/claude-fable-5→reason
   and opus/claude-opus-4-8→scrutiny again (supersedes the unreleased Opus 4.8
   guidance shift).
+- **Opus 5.5 is the primary reason-tier model** - `opus-5-5` /
+  `claude-opus-5-5` are now reason-tier models alongside Fable 5, and Opus 5.5
+  is the default (supersedes the `fable` default in the entry above). A root
+  session on either is ambient-governed, and the deprecated
+  `tiller dispatch --model opus-5-5` (or `claude-opus-5-5`) maps to the reason
+  tier. `opus` / `claude-opus-4-8` is unchanged: scrutiny tier, not
+  ambient-governed. `models.toml` lists `claude-headless:anthropic/opus-5-5` as
+  the only reason candidate, so `tiller run` roots and reason-tier dispatches
+  resolve to `opus-5-5`. It is also first in `reason_models`, so installed
+  `tiller-architect` and `tiller-deep-report` personas render
+  `model: opus-5-5`. Fable is secondary: use `/model fable` for an ambient root
+  (still governed), or set `[tiers.reason]` to `fable` in a project
+  `.tiller/models.toml` to route headless reason work to it. Tiller does not
+  fail over between the two on its own.
 - **Codex fallback ambient ledger hardening** - unmanaged Codex lifecycle
   observations now use a shared fallback ledger helper with `0700` parent
   directory permissions, `0600` file permissions, locked JSONL appends, clean

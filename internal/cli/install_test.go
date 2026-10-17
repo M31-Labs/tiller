@@ -650,15 +650,15 @@ func TestInstallAgents_ContentCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tiller-architect.md not found: %v", err)
 	}
-	if !strings.Contains(string(data), "model: fable") {
-		t.Errorf("tiller-architect.md missing 'model: fable'; content:\n%s", string(data))
+	if !strings.Contains(string(data), "model: opus-5-5") {
+		t.Errorf("tiller-architect.md missing 'model: opus-5-5'; content:\n%s", string(data))
 	}
 	data, err = os.ReadFile(filepath.Join(agentsDir, "tiller-deep-report.md"))
 	if err != nil {
 		t.Fatalf("tiller-deep-report.md not found: %v", err)
 	}
-	if !strings.Contains(string(data), "model: fable") {
-		t.Errorf("tiller-deep-report.md missing 'model: fable'; content:\n%s", string(data))
+	if !strings.Contains(string(data), "model: opus-5-5") {
+		t.Errorf("tiller-deep-report.md missing 'model: opus-5-5'; content:\n%s", string(data))
 	}
 	data, err = os.ReadFile(filepath.Join(agentsDir, "tiller-summary.md"))
 	if err != nil {
@@ -699,6 +699,32 @@ func TestInstallAgents_RenderConfiguredModels(t *testing.T) {
 		}
 		if !strings.Contains(string(data), want) {
 			t.Errorf("%s missing %q; content:\n%s", name, want, string(data))
+		}
+	}
+}
+
+// TestInstallAgents_Opus55RenderedWhenFirstReasonModel: architect and
+// deep-report take their model from the first reason alias. The embedded
+// default lists opus-5-5 first (see TestInstallAgents_ContentCheck); this test
+// pins the same rendering from an explicit config, independent of the defaults.
+func TestInstallAgents_Opus55RenderedWhenFirstReasonModel(t *testing.T) {
+	agentsDir := filepath.Join(t.TempDir(), "agents")
+	ambient := &tier.AmbientConfig{
+		Models: map[string][]string{
+			"reason":  {"opus-5-5", "claude-opus-5-5", "fable", "claude-fable-5"},
+			"execute": {"sonnet"},
+		},
+	}
+	if _, err := installAgentsWithConfig(agentsDir, false, ambient); err != nil {
+		t.Fatalf("installAgentsWithConfig: %v", err)
+	}
+	for _, name := range []string{"tiller-architect.md", "tiller-deep-report.md"} {
+		data, err := os.ReadFile(filepath.Join(agentsDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if !strings.Contains(string(data), "model: opus-5-5") {
+			t.Errorf("%s missing 'model: opus-5-5'; content:\n%s", name, string(data))
 		}
 	}
 }

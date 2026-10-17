@@ -490,6 +490,8 @@ func TestDispatch_ModelAliasDeprecated(t *testing.T) {
 		{"chief-architect", "claude-opus-4-8", "scrutiny"},
 		{"chief-architect", "fable", "reason"},
 		{"chief-architect", "claude-fable-5", "reason"},
+		{"chief-architect", "opus-5-5", "reason"},
+		{"chief-architect", "claude-opus-5-5", "reason"},
 		// Non-vacuous case: chief-architect defaults to the reason tier, so
 		// --model opus (which maps to scrutiny) only resolves to scrutiny when
 		// the deprecated opus→scrutiny alias mapping fires AND the cost
@@ -547,6 +549,13 @@ func TestClaudeOpusAmbientAndDispatchAliasContracts(t *testing.T) {
 	}
 	if got := claude.ModelTier("opus"); got != "scrutiny" {
 		t.Fatalf("Claude ambient ModelTier(opus) = %q, want scrutiny", got)
+	}
+	// opus-5-5 is a different token from opus: it is reason-tier, so a root
+	// session on it is ambient-governed while plain opus is not.
+	for _, model := range []string{"opus-5-5", "claude-opus-5-5"} {
+		if got := claude.ModelTier(model); got != "reason" {
+			t.Fatalf("Claude ambient ModelTier(%s) = %q, want reason", model, got)
+		}
 	}
 	if !claude.GovernsTier("reason") {
 		t.Fatal("Claude ambient config should govern reason tier")
